@@ -8,7 +8,6 @@
 const RELAY_URL = "https://your-relay.example.com"; // ← change this to your server
 const SYNC_INTERVAL_MIN = 2; // every 2 minutes
 const NATIVE_HOST_NAME = "zensync_host";
-const REGISTRATION_TOKEN = ""; // ← set if your relay requires a registration token
 
 console.log("[zensync] background script loaded");
 
@@ -213,15 +212,14 @@ async function performSync() {
 
 // --- setup / pairing ---
 
-async function setupAccount(passphrase, deviceName) {
+async function setupAccount(passphrase, deviceName, token) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const saltB64 = btoa(String.fromCharCode(...salt));
 
   console.log("[zensync] setup: registering on relay...");
-  // Register on relay — salt must be base64 (server expects bytes = base64 in Pydantic)
   const regResp = await relayRequest("/api/register", "POST", {
     salt: saltB64,
-    token: REGISTRATION_TOKEN,
+    token: token || "",
   });
   console.log("[zensync] setup: account registered:", regResp.account_id);
 
@@ -313,7 +311,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         case "setup":
           sendResponse(
-            await setupAccount(message.passphrase, message.deviceName)
+            await setupAccount(message.passphrase, message.deviceName, message.token)
           );
           break;
         case "join":
