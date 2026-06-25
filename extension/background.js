@@ -8,6 +8,7 @@
 const RELAY_URL = "https://your-relay.example.com"; // ← change this to your server
 const SYNC_INTERVAL_MIN = 2; // every 2 minutes
 const NATIVE_HOST_NAME = "zensync_host";
+const REGISTRATION_TOKEN = ""; // ← set if your relay requires a registration token
 
 console.log("[zensync] background script loaded");
 
@@ -220,6 +221,7 @@ async function setupAccount(passphrase, deviceName) {
   // Register on relay — salt must be base64 (server expects bytes = base64 in Pydantic)
   const regResp = await relayRequest("/api/register", "POST", {
     salt: saltB64,
+    token: REGISTRATION_TOKEN,
   });
   console.log("[zensync] setup: account registered:", regResp.account_id);
 

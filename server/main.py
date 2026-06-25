@@ -41,6 +41,10 @@ SALT_MAX_SIZE = 64
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX_REQUESTS = 60  # per account per window
 
+# Registration gate: if set, /api/register requires this token.
+# Generate with: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+REGISTRATION_TOKEN = os.environ.get("ZENSYNC_REG_TOKEN", "")
+
 # --- app ---
 app = FastAPI(title="Zen Sync Relay", version="0.2.0")
 
@@ -48,6 +52,12 @@ app = FastAPI(title="Zen Sync Relay", version="0.2.0")
 # --- rate limiter (in-memory, per account) ---
 _rate_buckets: dict[str, deque[float]] = defaultdict(deque)
 _rate_locks: dict[str, float] = {}
+
+
+def _const_time_eq(a: str, b: str) -> bool:
+    """Constant-time string comparison to prevent timing attacks."""
+    import hmac
+    return hmac.compare_digest(a.encode(), b.encode())
 
 
 def check_rate_limit(account_id: str) -> None:
@@ -118,6 +128,7 @@ def _startup():
 # --- models ---
 class RegisterRequest(BaseModel):
     salt: str = Field(..., description="Argon2id salt, base64-encoded")
+    token: str = Field("", description="Registration token (required if ZENSYNC_REG_TOKEN is set)")
 
     @field_validator("salt")
     @classmethod
@@ -233,6 +244,10 @@ def health():
 
 @app.post("/api/register", response_model=RegisterResponse)
 def register(req: RegisterRequest):
+    # Gate: if registration token is configured, require it
+    if REGISTRATION_TOKEN:
+        if not req.token or not _const_time_eq(req.token, REGISTRATION_TOKEN):
+            raise HTTPException(403, "registration closed")
     account_id = str(uuid.uuid4())
     salt_bytes = base64.b64decode(req.salt)
     with get_db() as conn:
