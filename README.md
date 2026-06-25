@@ -175,19 +175,18 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed guides per platform.
 
 ### Point your extension at your relay
 
-Edit `extension/background.js`:
+The relay URL is entered in the extension UI — no code editing needed:
 
-```js
-const RELAY_URL = "https://your-domain.com";
-```
-
-Then reload the extension.
+1. Click the Zen Sync icon → **Setup** tab
+2. Enter your **Relay URL** (e.g. `https://zensync.yourname.com`)
+3. Enter your **Registration Token** (from the server's `ZENSYNC_REG_TOKEN` env var)
+4. Continue with device name + passphrase
 
 ## Configuration
 
 | Setting | Where | Default |
 | --- | --- | --- |
-| Relay URL | `extension/background.js` → `RELAY_URL` | `https://your-relay.example.com` |
+| Relay URL | Extension UI → Setup/Join → "Relay URL" field | `https://your-relay.example.com` |
 | Sync interval | `extension/background.js` → `SYNC_INTERVAL_MIN` | 2 minutes |
 | Max blob size | `server/main.py` → `MAX_BLOB_SIZE` | 16 MB |
 | Rate limit | `server/main.py` → `RATE_LIMIT_MAX_REQUESTS` | 60 req/min |

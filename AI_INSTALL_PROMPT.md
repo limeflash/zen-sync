@@ -22,37 +22,54 @@ git clone https://github.com/limeflash/zen-sync.git
 - Install: fastapi, uvicorn[standard], pydantic
 - Copy server/main.py to /opt/zensync/app/main.py
 - Set env: ZENSYNC_DATA_DIR=/opt/zensync/data
+- Generate a registration token: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+- Set env: ZENSYNC_REG_TOKEN=<the generated token>
 - Create systemd service "zensync-relay":
     ExecStart=/opt/zensync/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
     WorkingDirectory=/opt/zensync/app
+    Environment=ZENSYNC_DATA_DIR=/opt/zensync/data
+    Environment=ZENSYNC_REG_TOKEN=<the generated token>
 - Enable + start the service
 - Verify: curl http://127.0.0.1:8000/api/health → {"status":"ok"}
 
 ### 3. Set up Caddy reverse proxy with TLS
 - Install Caddy
-- Configure: domain REPLACE_WITH_YOUR_DOMAIN
+- Configure: your domain
     - Proxy /api/* to localhost:8000
     - Auto TLS via Let's Encrypt
     - Security headers: HSTS, X-Content-Type-Options, X-Frame-Options
     - Request body max 17MB
 - Start Caddy
-- Verify: curl https://REPLACE_WITH_YOUR_DOMAIN/api/health → {"status":"ok"}
+- Verify: curl https://YOUR_DOMAIN/api/health → {"status":"ok"}
 
 ### 4. Install the native host (on your local machine)
 cd native-host
 python install.py
 python install.py --status  # verify all green
 
-### 5. Point the extension at your relay
-- Edit extension/background.js: set RELAY_URL to your domain
-- Load extension in Zen Browser:
-    about:debugging#/runtime/this-firefox → Load Temporary Add-on → extension/manifest.json
+### 5. Load the extension in Zen Browser
+- about:debugging#/runtime/this-firefox → Load Temporary Add-on → extension/manifest.json
+- Click the Zen Sync icon → Setup tab
+- Enter:
+    Relay URL: https://YOUR_DOMAIN
+    Registration Token: <the token from step 2>
+    Device Name: your device name
+    Passphrase: your strong passphrase
+- Click Create Account
 
-### 6. Set up account
-- Click Zen Sync icon → Setup tab → enter device name + passphrase → Create Account
-- On second device: install native host + load extension → Join tab → enter Account ID + Salt + passphrase
+### 6. Add another device
+- Install native host: python install.py
+- Load extension in Zen Browser
+- Click Zen Sync → Join tab
+- Enter:
+    Relay URL: https://YOUR_DOMAIN
+    Account ID: (from device 1's Status tab)
+    Salt: (from device 1's Status tab)
+    Passphrase: same as device 1
+    Device Name: new device name
+- Click Join Account
 
-Tell me the relay URL when done.
+Tell me the relay URL and registration token when done.
 ```
 
 ---
@@ -67,9 +84,16 @@ Set up the Zen Sync native host on this machine.
 3. Verify: python install.py --status (all should be True/present)
 4. Load extension in Zen Browser:
    about:debugging#/runtime/this-firefox → Load Temporary Add-on → extension/manifest.json
-5. Click the Zen Sync icon → Setup → enter device name + passphrase → Create Account
+5. Click the Zen Sync icon → Setup tab
+6. Enter:
+   - Relay URL (provided below)
+   - Registration Token (provided below)
+   - Device Name (e.g. "MacBook")
+   - Passphrase (strong, 8+ chars)
+7. Click Create Account
 
-If using an existing relay, edit extension/background.js and set RELAY_URL to the relay's URL before loading the extension.
+Relay URL: REPLACE_WITH_YOUR_RELAY_URL
+Registration Token: REPLACE_WITH_YOUR_REGISTRATION_TOKEN
 ```
 
 ---
@@ -87,10 +111,16 @@ Steps:
 3. /opt/zensync/venv/bin/pip install fastapi 'uvicorn[standard]' pydantic
 4. mkdir -p /opt/zensync/app /opt/zensync/data
 5. cp /opt/zensync-src/server/main.py /opt/zensync/app/
-6. Create systemd service running uvicorn on port 8000, WorkingDirectory=/opt/zensync/app
-7. Install Caddy, configure reverse proxy for YOUR_DOMAIN → localhost:8000 with auto TLS
-8. Enable + start both services
-9. Verify: curl https://YOUR_DOMAIN/api/health
+6. Generate registration token: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+7. Create systemd service running uvicorn on port 8000:
+   - WorkingDirectory=/opt/zensync/app
+   - Environment=ZENSYNC_DATA_DIR=/opt/zensync/data
+   - Environment=ZENSYNC_REG_TOKEN=<generated token>
+8. Install Caddy, configure reverse proxy for YOUR_DOMAIN → localhost:8000 with auto TLS
+9. Enable + start both services
+10. Verify: curl https://YOUR_DOMAIN/api/health → {"status":"ok"}
+11. Also verify registration is gated: curl -X POST https://YOUR_DOMAIN/api/register -H 'Content-Type: application/json' -d '{"salt":"dGVzdA=="}' should return 403 "registration closed"
+12. Report back: relay URL + registration token
 
-Set ZENSYNC_DATA_DIR=/opt/zensync/data as environment variable in the systemd service.
+The relay URL and registration token go into the extension UI (Setup tab → Relay URL + Registration Token fields).
 ```

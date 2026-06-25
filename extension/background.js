@@ -5,7 +5,7 @@
  * Runs sync cycle on alarm + on-demand.
  */
 
-const RELAY_URL = "https://your-relay.example.com"; // ← change this to your server
+const DEFAULT_RELAY_URL = "https://your-relay.example.com";
 const SYNC_INTERVAL_MIN = 2; // every 2 minutes
 const NATIVE_HOST_NAME = "zensync_host";
 
@@ -47,9 +47,14 @@ function sendToNative(message) {
 }
 
 // --- relay client ---
+async function getRelayUrl() {
+  const stored = await browser.storage.local.get("relayUrl");
+  return stored.relayUrl || DEFAULT_RELAY_URL;
+}
 
 async function relayRequest(path, method = "GET", body = null, headers = {}) {
   const RELAY_TIMEOUT_MS = 15000;
+  const relayUrl = await getRelayUrl();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RELAY_TIMEOUT_MS);
   try {
@@ -59,7 +64,7 @@ async function relayRequest(path, method = "GET", body = null, headers = {}) {
       signal: controller.signal,
     };
     if (body) req.body = JSON.stringify(body);
-    const res = await fetch(`${RELAY_URL}${path}`, req);
+    const res = await fetch(`${relayUrl}${path}`, req);
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`relay ${method} ${path}: ${res.status} ${text.substring(0, 200)}`);
@@ -212,9 +217,14 @@ async function performSync() {
 
 // --- setup / pairing ---
 
-async function setupAccount(passphrase, deviceName, token) {
+async function setupAccount(passphrase, deviceName, token, relayUrl) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const saltB64 = btoa(String.fromCharCode(...salt));
+
+  // Store relay URL if provided
+  if (relayUrl) {
+    await browser.storage.local.set({ relayUrl });
+  }
 
   console.log("[zensync] setup: registering on relay...");
   const regResp = await relayRequest("/api/register", "POST", {
@@ -258,7 +268,12 @@ async function setupAccount(passphrase, deviceName, token) {
   return { ok: true, accountId: regResp.account_id, deviceId: deviceResp.device_id };
 }
 
-async function joinAccount(accountId, passphrase, saltB64, deviceName) {
+async function joinAccount(accountId, passphrase, saltB64, deviceName, relayUrl) {
+  // Store relay URL if provided
+  if (relayUrl) {
+    await browser.storage.local.set({ relayUrl });
+  }
+
   // Register device under existing account
   const deviceResp = await relayRequest(
     "/api/devices",
@@ -309,18 +324,19 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.log("[zensync] starting sync...");
           sendResponse(await performSync());
           break;
-        case "setup":
+      case "setup":
           sendResponse(
-            await setupAccount(message.passphrase, message.deviceName, message.token)
+            await setupAccount(message.passphrase, message.deviceName, message.token, message.relayUrl)
           );
           break;
-        case "join":
+      case "join":
           sendResponse(
             await joinAccount(
               message.accountId,
               message.passphrase,
               message.salt,
-              message.deviceName
+              message.deviceName,
+              message.relayUrl
             )
           );
           break;

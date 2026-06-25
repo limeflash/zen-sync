@@ -124,6 +124,14 @@
         <strong>Create a new sync account.</strong> Choose a strong passphrase — it encrypts your data end-to-end and cannot be recovered if lost.
       </div>
       <div class="field">
+        <label class="label">Relay URL</label>
+        <input class="input mono" id="setup-relay" type="text" placeholder="https://your-relay.example.com">
+      </div>
+      <div class="field">
+        <label class="label">Registration Token</label>
+        <input class="input mono" id="setup-token" type="text" placeholder="Paste relay registration token">
+      </div>
+      <div class="field">
         <label class="label">Device Name</label>
         <input class="input" id="setup-device" type="text" placeholder="Windows PC">
       </div>
@@ -135,10 +143,6 @@
         <label class="label">Confirm Passphrase</label>
         <input class="input" id="setup-pass2" type="password" placeholder="Repeat passphrase">
       </div>
-      <div class="field">
-        <label class="label">Registration Token</label>
-        <input class="input mono" id="setup-token" type="text" placeholder="Paste relay registration token">
-      </div>
       <button class="btn btn-primary" id="btn-setup">Create Account</button>
     </section>
 
@@ -146,6 +150,10 @@
     <section class="view" id="view-join">
       <div class="hint">
         <strong>Join an existing account</strong> from another device. Enter the Account ID and Salt shown on your paired device.
+      </div>
+      <div class="field">
+        <label class="label">Relay URL</label>
+        <input class="input mono" id="join-relay" type="text" placeholder="https://your-relay.example.com">
       </div>
       <div class="field">
         <label class="label">Account ID</label>

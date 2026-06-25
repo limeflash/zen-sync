@@ -174,7 +174,9 @@ $("btn-setup").addEventListener("click", async () => {
   const pass = $("setup-pass").value;
   const pass2 = $("setup-pass2").value;
   const token = $("setup-token").value.trim();
+  const relayUrl = $("setup-relay").value.trim();
 
+  if (!relayUrl) { showToast("Relay URL is required", "error"); return; }
   if (!pass || pass.length < 8) { showToast("Passphrase must be 8+ characters", "error"); return; }
   if (pass !== pass2) { showToast("Passphrases don't match", "error"); return; }
 
@@ -183,7 +185,7 @@ $("btn-setup").addEventListener("click", async () => {
   btn.textContent = "Creating…";
 
   try {
-    const result = await sendToBg({ action: "setup", passphrase: pass, deviceName, token });
+    const result = await sendToBg({ action: "setup", passphrase: pass, deviceName, token, relayUrl });
     if (result.ok) {
       showToast("Account created!", "success");
       $("setup-pass").value = "";
@@ -208,15 +210,17 @@ $("btn-join").addEventListener("click", async () => {
   const salt = $("join-salt").value.trim();
   const pass = $("join-pass").value;
   const deviceName = $("join-device").value.trim() || "Unknown Device";
+  const relayUrl = $("join-relay").value.trim();
 
-  if (!accountId || !salt || !pass) { showToast("All fields required", "error"); return; }
+  if (!relayUrl) { showToast("Relay URL is required", "error"); return; }
+  if (!accountId || !salt || !pass) { showToast("Account ID, Salt, and Passphrase are required", "error"); return; }
 
   const btn = $("btn-join");
   btn.disabled = true;
   btn.textContent = "Joining…";
 
   try {
-    const result = await sendToBg({ action: "join", accountId, passphrase: pass, salt, deviceName });
+    const result = await sendToBg({ action: "join", accountId, passphrase: pass, salt, deviceName, relayUrl });
     if (result.ok) {
       showToast("Joined!", "success");
       $("join-pass").value = "";
