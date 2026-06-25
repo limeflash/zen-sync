@@ -215,7 +215,7 @@ zen-sync/
 │   └── zensync-relay.service
 ├── assets/             logos and images
 ├── docs/               architecture docs
-├── LICENSE              MPL-2.0
+├── LICENSE              MIT
 └── INSTALL.md           detailed install guide
 ```
 
