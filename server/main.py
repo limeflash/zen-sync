@@ -52,6 +52,7 @@ app = FastAPI(title="Zen Sync Relay", version="0.2.0")
 # --- rate limiter (in-memory, per account) ---
 _rate_buckets: dict[str, deque[float]] = defaultdict(deque)
 _rate_locks: dict[str, float] = {}
+_ip_register_buckets: dict[str, deque[float]] = defaultdict(deque)
 
 
 def _const_time_eq(a: str, b: str) -> bool:
@@ -63,11 +64,26 @@ def _const_time_eq(a: str, b: str) -> bool:
 def check_rate_limit(account_id: str) -> None:
     now = time.time()
     bucket = _rate_buckets[account_id]
-    # purge old entries
     while bucket and bucket[0] < now - RATE_LIMIT_WINDOW:
         bucket.popleft()
     if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
         raise HTTPException(429, "rate limit exceeded")
+    bucket.append(now)
+    # Periodic cleanup of stale buckets (every ~5 min)
+    if len(_rate_buckets) > 1000:
+        stale = [k for k, v in _rate_buckets if not v or v[0] < now - RATE_LIMIT_WINDOW * 10]
+        for k in stale:
+            del _rate_buckets[k]
+
+
+def check_ip_register_limit(ip: str) -> None:
+    """Limit registration requests per IP (prevents DoS on /api/register)."""
+    now = time.time()
+    bucket = _ip_register_buckets[ip]
+    while bucket and bucket[0] < now - 3600:  # 1 hour window
+        bucket.popleft()
+    if len(bucket) >= 5:  # max 5 registrations per hour per IP
+        raise HTTPException(429, "too many registrations from this IP")
     bucket.append(now)
 
 
@@ -76,7 +92,6 @@ def check_rate_limit(account_id: str) -> None:
 def get_db():
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     try:
         yield conn
@@ -88,6 +103,7 @@ def get_db():
 def init_db():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with get_db() as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS accounts (
@@ -243,11 +259,13 @@ def health():
 
 
 @app.post("/api/register", response_model=RegisterResponse)
-def register(req: RegisterRequest):
+def register(req: RegisterRequest, request: Request):
     # Gate: if registration token is configured, require it
     if REGISTRATION_TOKEN:
         if not req.token or not _const_time_eq(req.token, REGISTRATION_TOKEN):
             raise HTTPException(403, "registration closed")
+    # IP rate limit (prevents DoS via repeated registration)
+    check_ip_register_limit(request.client.host if request.client else "0.0.0.0")
     account_id = str(uuid.uuid4())
     salt_bytes = base64.b64decode(req.salt)
     with get_db() as conn:
@@ -357,6 +375,7 @@ def publish_blob(
 @app.get("/api/blobs", response_model=list[BlobEntry])
 def pull_blobs(
     request: Request,
+    response: Response,
     account_id: str = Header(..., alias="X-Account-Id"),
     device_id: str = Header(..., alias="X-Device-Id"),
     since: float = 0.0,
@@ -396,6 +415,5 @@ def pull_blobs(
         for r in rows
     ]
 
-    response = Response(status_code=200)
     response.headers["X-Has-More"] = "true" if has_more else "false"
     return result

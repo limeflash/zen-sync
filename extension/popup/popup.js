@@ -280,7 +280,7 @@ function refreshQR(forceNewToken = false) {
     return;
   }
 
-  browser.storage.local.get(["accountId", "salt"]).then(stored => {
+  browser.storage.local.get(["accountId", "salt", "relayUrl"]).then(stored => {
     if (!stored.accountId || !stored.salt) {
       $("pair-not-configured").textContent = "Set up an account first to generate a QR code.";
       $("pair-not-configured").style.display = "block";
@@ -300,7 +300,7 @@ function refreshQR(forceNewToken = false) {
     const data = JSON.stringify({
       a: stored.accountId,
       s: stored.salt,
-      r: "your-relay-url", // placeholder — replaced with configured relay at runtime
+      r: stored.relayUrl || "your-relay-url",
       t: _pairToken,
       e: _pairExpiry,
     });

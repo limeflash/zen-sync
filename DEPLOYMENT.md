@@ -116,10 +116,11 @@ sudo systemctl enable --now zensync-relay
 
 ## Point your extension at the relay
 
-Edit `extension/background.js`:
+No code editing needed — the relay URL is entered in the extension UI:
 
-```js
-const RELAY_URL = "https://zensync.yourname.com";
-```
+1. Click the Zen Sync icon → **Setup** tab
+2. Enter your **Relay URL** (e.g. `https://zensync.yourname.com`)
+3. Enter your **Registration Token** (from the server's `ZENSYNC_REG_TOKEN` env var)
+4. Continue with device name + passphrase
 
-Reload the extension in Zen Browser. Done.
+The relay URL is stored in `browser.storage.local` and used for all requests.

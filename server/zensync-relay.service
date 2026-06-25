@@ -4,7 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=zensync
+Group=zensync
 WorkingDirectory=/opt/zensync/app
 Environment=ZENSYNC_DATA_DIR=/opt/zensync/data
 ExecStart=/opt/zensync/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000

@@ -97,8 +97,8 @@ Then remove the extension from Zen Browser (`about:addons` → Remove).
 
 ### macOS
 
-- Native host manifest at `/Library/Application Support/Mozilla/NativeMessagingHosts/zensync_host.json`
-- May need `sudo` for the manifest directory
+- Native host manifest at `~/Library/Application Support/Mozilla/NativeMessagingHosts/zensync_host.json`
+- No `sudo` needed (user-level directory)
 - Python venv at `native-host/venv/`
 
 ### Linux

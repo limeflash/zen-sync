@@ -328,24 +328,24 @@ def decrypt(key: bytes, ciphertext: bytes, nonce: bytes) -> bytes:
 
 
 def store_key(account_id: str, passphrase: str, salt: bytes) -> bool:
-    """Derive key from passphrase and store in OS keyring. Passphrase is NOT stored."""
+    """Derive key from passphrase and store in OS keyring. Passphrase is NOT stored.
+
+    Raises RuntimeError if keyring is unavailable — no plaintext fallback.
+    """
     key = derive_key(passphrase, salt)
     try:
         import keyring
         keyring.set_password("zensync", account_id, key.hex())
         return True
-    except Exception:
-        # Fallback: store in a protected file (600 perms)
-        key_dir = Path.home() / ".zensync"
-        key_dir.mkdir(mode=0o700, exist_ok=True)
-        key_file = key_dir / f"key_{account_id[:8]}"
-        key_file.write_bytes(key)
-        key_file.chmod(0o600)
-        return True
+    except Exception as e:
+        raise RuntimeError(
+            f"System keyring is unavailable. Key cannot be stored securely. "
+            f"Install keyring backend (e.g. on Linux: dbus, gnome-keyring). Error: {e}"
+        )
 
 
 def get_key(account_id: str) -> bytes | None:
-    """Retrieve derived key from OS keyring or fallback file."""
+    """Retrieve derived key from OS keyring."""
     try:
         import keyring
         hex_key = keyring.get_password("zensync", account_id)
@@ -353,23 +353,16 @@ def get_key(account_id: str) -> bytes | None:
             return bytes.fromhex(hex_key)
     except Exception:
         pass
-    # Fallback
-    key_file = Path.home() / ".zensync" / f"key_{account_id[:8]}"
-    if key_file.exists():
-        return key_file.read_bytes()
     return None
 
 
 def delete_key(account_id: str) -> bool:
-    """Remove key from keyring and fallback file."""
+    """Remove key from keyring."""
     try:
         import keyring
         keyring.delete_password("zensync", account_id)
     except Exception:
         pass
-    key_file = Path.home() / ".zensync" / f"key_{account_id[:8]}"
-    if key_file.exists():
-        key_file.unlink()
     return True
 
 
