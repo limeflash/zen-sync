@@ -1,0 +1,43 @@
+# Secrets / env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Build artifacts
+dist/
+build/
+*.xpi
+*.zip
+
+# Native host install staging
+native-host/build/
+native-host/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+
+# Serena
+.serena/

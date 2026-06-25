@@ -1,0 +1,15 @@
+[Unit]
+Description=Zen Sync Relay (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/zensync/app
+Environment=ZENSYNC_DATA_DIR=/opt/zensync/data
+ExecStart=/opt/zensync/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

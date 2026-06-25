@@ -1,0 +1,27 @@
+# Zen Sync Caddyfile
+# Reverse proxy with automatic TLS via Let's Encrypt
+
+your-relay.example.com {
+    encode zstd gzip
+
+    # limit request body size (17 MB — slightly above MAX_BLOB_SIZE + overhead)
+    request_body {
+        max_size 17825792
+    }
+
+    # security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+    }
+
+    # API routes
+    handle /api/* {
+        reverse_proxy localhost:8000
+    }
+
+    # default
+    respond "zensync relay" 200
+}

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="header">
+    <div class="header-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/>
+        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+        <path d="M16 16h5v5"/>
+      </svg>
+    </div>
+    <div>
+      <div class="header-title">Zen Sync</div>
+      <div class="header-sub">E2E encrypted workspace sync</div>
+    </div>
+    <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
+      <svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+      </svg>
+      <svg id="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+      </svg>
+    </button>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="status">Status</button>
+    <button class="tab" data-tab="setup">Setup</button>
+    <button class="tab" data-tab="join">Join</button>
+    <button class="tab" data-tab="pair">Pair</button>
+  </nav>
+
+  <main class="content">
+
+    <!-- STATUS -->
+    <section class="view active" id="view-status">
+      <div class="card">
+        <div class="card-label">Connection</div>
+        <div class="card-row">
+          <span class="card-row-label">Status</span>
+          <span class="card-row-value" style="display:flex;align-items:center;gap:6px">
+            <span class="status-dot idle" id="status-dot"></span>
+            <span id="status-text">Loading…</span>
+          </span>
+        </div>
+        <div class="card-row">
+          <span class="card-row-label">Device</span>
+          <span class="card-row-value" id="status-device">—</span>
+        </div>
+        <div class="card-row">
+          <span class="card-row-label">Account</span>
+          <span class="card-row-value" id="status-account">—</span>
+        </div>
+      </div>
+
+      <div class="card" id="sync-card" style="display:none">
+        <div class="card-label">Last Sync</div>
+        <div class="card-row">
+          <span class="card-row-label">Time</span>
+          <span class="card-row-value" id="sync-time">—</span>
+        </div>
+        <div class="card-row">
+          <span class="card-row-label">Push</span>
+          <span class="card-row-value" id="sync-push">—</span>
+        </div>
+        <div class="card-row">
+          <span class="card-row-label">Pull</span>
+          <span class="card-row-value" id="sync-pull">—</span>
+        </div>
+      </div>
+
+      <div class="card" id="account-info" style="display:none">
+        <div class="card-label">Pairing Info</div>
+        <div class="field">
+          <label class="label">Account ID</label>
+          <div class="copy-row">
+            <input class="input mono" id="copy-account" readonly>
+            <button class="copy-btn" data-copy="copy-account" title="Copy">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="label">Salt</label>
+          <div class="copy-row">
+            <input class="input mono" id="copy-salt" readonly>
+            <button class="copy-btn" data-copy="copy-salt" title="Copy">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="btn-sync" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
+        </svg>
+        <span id="btn-sync-text">Sync Now</span>
+      </button>
+
+      <button class="btn btn-ghost btn-sm" id="btn-refresh" style="width:100%;margin-top:auto">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>
+        </svg>
+        Refresh Status
+      </button>
+    </section>
+
+    <!-- SETUP -->
+    <section class="view" id="view-setup">
+      <div class="hint">
+        <strong>Create a new sync account.</strong> Choose a strong passphrase — it encrypts your data end-to-end and cannot be recovered if lost.
+      </div>
+      <div class="field">
+        <label class="label">Device Name</label>
+        <input class="input" id="setup-device" type="text" placeholder="Windows PC">
+      </div>
+      <div class="field">
+        <label class="label">Passphrase</label>
+        <input class="input" id="setup-pass" type="password" placeholder="At least 8 characters">
+      </div>
+      <div class="field">
+        <label class="label">Confirm Passphrase</label>
+        <input class="input" id="setup-pass2" type="password" placeholder="Repeat passphrase">
+      </div>
+      <button class="btn btn-primary" id="btn-setup">Create Account</button>
+    </section>
+
+    <!-- JOIN -->
+    <section class="view" id="view-join">
+      <div class="hint">
+        <strong>Join an existing account</strong> from another device. Enter the Account ID and Salt shown on your paired device.
+      </div>
+      <div class="field">
+        <label class="label">Account ID</label>
+        <input class="input mono" id="join-account" type="text" placeholder="xxxxxxxx-xxxx-xxxx-…">
+      </div>
+      <div class="field">
+        <label class="label">Salt (base64)</label>
+        <input class="input mono" id="join-salt" type="text" placeholder="base64 encoded salt">
+      </div>
+      <div class="field">
+        <label class="label">Passphrase</label>
+        <input class="input" id="join-pass" type="password" placeholder="Same passphrase as device 1">
+      </div>
+      <div class="field">
+        <label class="label">Device Name</label>
+        <input class="input" id="join-device" type="text" placeholder="MacBook">
+      </div>
+      <button class="btn btn-primary" id="btn-join">Join Account</button>
+    </section>
+
+    <!-- PAIR (QR) -->
+    <section class="view" id="view-pair">
+      <div class="hint">
+        <strong>QR pairing.</strong> Show this code on device 1, scan with device 2 to instantly share account details.
+      </div>
+      <div id="pair-qr-container" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;background:hsl(var(--muted));border:1px solid hsl(var(--border));border-radius:var(--radius)">
+        <canvas id="pair-qr-canvas" style="display:none;border-radius:8px"></canvas>
+        <div id="pair-not-configured" style="padding:40px 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center">
+          Set up an account first to generate a QR code.
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px">
+        <span style="color:hsl(var(--muted-foreground))">Expires in</span>
+        <span id="pair-countdown" class="pair-timer" style="display:none">60s</span>
+      </div>
+      <button class="btn" id="btn-regen-qr">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
+        </svg>
+        Regenerate QR
+      </button>
+    </section>
+
+  </main>
+
+  <div class="toast" id="toast"></div>
+</div>
+<script src="qrcode.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>
