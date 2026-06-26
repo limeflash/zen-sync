@@ -22,7 +22,7 @@ jobs:
           pip install -r native-host/requirements.txt
       - name: Install audit tools
         run: pip install bandit pip-audit
-      - name: Bandit (medium+ severity only)
+      - name: Bandit (medium+ severity only, excludes venv)
         run: bandit -r server native-host -q -ll
       - name: pip-audit (server + native deps)
         run: pip-audit

@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
-Zen Sync — unified installer.
+Zen Sync â€” unified installer.
 
 Does everything:
   1. Creates a Python venv for the native host
@@ -20,7 +20,7 @@ import json
 import os
 import platform
 import shutil
-import subprocess
+import subprocess  # nosec B404 â€” trusted installer commands (venv, pip, reg)
 import sys
 from pathlib import Path
 
@@ -40,7 +40,7 @@ def venv_python() -> Path:
 
 def run(cmd: list[str], **kw) -> None:
     print(f"  $ {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True, **kw)
+    result = subprocess.run(cmd, capture_output=True, text=True, **kw)  # nosec B603 â€” trusted commands only
     if result.returncode != 0:
         if result.stderr:
             print(f"  STDERR: {result.stderr.strip()}")
@@ -101,7 +101,7 @@ def uninstall_windows_registry() -> None:
 
 def install() -> None:
     print("=" * 60)
-    print("  Zen Sync — Installer")
+    print("  Zen Sync â€” Installer")
     print("=" * 60)
 
     py = sys.executable
@@ -155,7 +155,7 @@ Next steps:
 
 def uninstall() -> None:
     print("=" * 60)
-    print("  Zen Sync — Uninstaller")
+    print("  Zen Sync â€” Uninstaller")
     print("=" * 60)
 
     manifest_path = get_manifest_path()
@@ -186,7 +186,7 @@ def uninstall() -> None:
 
 def status() -> None:
     print("=" * 60)
-    print("  Zen Sync — Installation Status")
+    print("  Zen Sync â€” Installation Status")
     print("=" * 60)
 
     manifest_path = get_manifest_path()
@@ -212,7 +212,7 @@ def status() -> None:
 
     if platform.system() == "Windows":
         key = rf"HKCU\SOFTWARE\Mozilla\NativeMessagingHosts\{HOST_NAME}"
-        result = subprocess.run(
+        result = subprocess.run(  # nosec â€” trusted 'reg query' for status check
             ["reg", "query", key, "/ve"],
             capture_output=True, text=True
         )

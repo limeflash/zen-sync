@@ -1,4 +1,4 @@
-"""
+﻿"""
 Zen Sync native messaging host.
 
 Communicates with the WebExtension via Mozilla native messaging (stdio JSON).
@@ -141,7 +141,7 @@ def read_mozlz4(path: Path, fail_closed: bool = False) -> Any:
     Args:
         path: file to read
         fail_closed: if True (for primary session store), raise on corruption
-                     instead of returning {} — prevents publishing empty state
+                     instead of returning {} â€” prevents publishing empty state
 
     Guards against decompression bombs by capping uncompressed size.
     """
@@ -155,19 +155,19 @@ def read_mozlz4(path: Path, fail_closed: bool = False) -> Any:
         magic = data[:8]
         if magic != b"mozLz40\x00":
             if fail_closed:
-                raise ValueError("session file has invalid magic — refusing to publish empty state")
+                raise ValueError("session file has invalid magic â€” refusing to publish empty state")
             return {}
         uncompressed_size = struct.unpack("<I", data[8:12])[0]
         if uncompressed_size > MAX_UNCOMPRESSED_SIZE:
             if fail_closed:
-                raise ValueError("session file exceeds size limit — refusing to publish")
+                raise ValueError("session file exceeds size limit â€” refusing to publish")
             return {}
         decompressed = lz4.block.decompress(data[12:], uncompressed_size=uncompressed_size)
         return json.loads(decompressed.decode("utf-8"))
     except Exception as e:
         if fail_closed:
             raise
-        # Non-critical files (recovery backup, live folders) — return empty
+        # Non-critical files (recovery backup, live folders) â€” return empty
         return {}
 
 
@@ -175,7 +175,7 @@ def write_mozlz4(path: Path, data: dict[str, Any]) -> None:
     """Compress JSON to Mozilla .jsonlz4 format and write to file.
 
     Format: 8-byte magic (mozLz40\\0) + 4-byte LE uncompressed size + LZ4 block.
-    Uses store_size=False — Mozilla stores size in the 4-byte header, not in LZ4 block.
+    Uses store_size=False â€” Mozilla stores size in the 4-byte header, not in LZ4 block.
     """
     import lz4.block
     import struct
@@ -207,29 +207,29 @@ def _validate_stage_id(stage_id: str, profile: Path) -> Path | None:
 
 def is_zen_running() -> bool:
     """Detect if Zen Browser is currently running."""
-    import subprocess
+    import subprocess  # nosec B404 â€” trusted process detection only
     system = platform.system()
     try:
         if system == "Windows":
-            result = subprocess.run(
+            result = subprocess.run(  # nosec â€” trusted 'tasklist' command
                 ["tasklist", "/FI", "IMAGENAME eq zen.exe", "/NH"],
                 capture_output=True, text=True, timeout=5
             )
             return "zen.exe" in result.stdout.lower()
         elif system == "Darwin":
-            result = subprocess.run(
+            result = subprocess.run(  # nosec â€” trusted 'pgrep' command
                 ["pgrep", "-x", "zen"],
                 capture_output=True, text=True, timeout=5
             )
             return result.returncode == 0
         else:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec â€” trusted 'pgrep' command
                 ["pgrep", "-x", "zen"],
                 capture_output=True, text=True, timeout=5
             )
             return result.returncode == 0
     except Exception:
-        # If detection fails, assume running (fail-closed — don't risk overwriting)
+        # If detection fails, assume running (fail-closed â€” don't risk overwriting)
         return True
 
 
@@ -389,7 +389,7 @@ def derive_auth_token(enc_key: bytes) -> bytes:
     """Derive a separate auth token from the encryption key via HMAC-SHA256.
 
     The auth token is sent to the server for authentication.
-    The server stores only a hash of it — never the encryption key.
+    The server stores only a hash of it â€” never the encryption key.
     """
     import hashlib
     import hmac
@@ -435,7 +435,7 @@ def decrypt(key: bytes, ciphertext: bytes, nonce: bytes) -> bytes:
 def store_key(account_id: str, passphrase: str, salt: bytes) -> bool:
     """Derive key from passphrase and store in OS keyring. Passphrase is NOT stored.
 
-    Raises RuntimeError if keyring is unavailable — no plaintext fallback.
+    Raises RuntimeError if keyring is unavailable â€” no plaintext fallback.
     """
     key = derive_key(passphrase, salt)
     try:
@@ -459,7 +459,7 @@ def get_key(account_id: str) -> bytes | None:
         hex_key = keyring.get_password("zensync", account_id)
         if hex_key:
             return bytes.fromhex(hex_key)
-        return None  # Key not found — legitimate, not an error
+        return None  # Key not found â€” legitimate, not an error
     except ImportError:
         raise RuntimeError("keyring library not installed")
     except Exception as e:
@@ -473,9 +473,9 @@ def delete_key(account_id: str) -> bool:
         import keyring
         keyring.delete_password("zensync", account_id)
     except ImportError:
-        pass
+        pass  # nosec B110 â€” keyring not installed, nothing to delete
     except Exception:
-        pass  # Key may not exist — that's fine for delete
+        pass  # nosec B110 â€” key may not exist, that's fine for delete
     return True
 
 
@@ -536,11 +536,11 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
             auth_hex = keyring.get_password("zensync_auth", account_id)
             if auth_hex:
                 return {"ok": True, "auth_token": auth_hex}
-            return {"ok": False, "error": "auth token not found — run setup first"}
+            return {"ok": False, "error": "auth token not found â€” run setup first"}
         except ImportError:
             return {"ok": False, "error": "keyring library not installed"}
         except Exception as e:
-            return {"ok": False, "error": f"keyring access failed: {type(e).__name__} — is the keyring unlocked?"}
+            return {"ok": False, "error": f"keyring access failed: {type(e).__name__} â€” is the keyring unlocked?"}
 
     if action == "store_auth_token":
         """Store auth token in keyring separately from enc key."""
@@ -626,7 +626,7 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "running": is_zen_running()}
 
     if action == "stage_apply":
-        """Stage remote state for apply — does NOT modify live profile files.
+        """Stage remote state for apply â€” does NOT modify live profile files.
         Returns staged_apply_id. Use commit_staged_apply after Zen is closed."""
         state = msg.get("state", {})
         if not state:
@@ -708,7 +708,7 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
         }
 
     if action == "commit_staged_apply":
-        """Commit staged state — only if Zen is NOT running. Atomic replace.
+        """Commit staged state â€” only if Zen is NOT running. Atomic replace.
 
         Safety: validates stage_id (no traversal), takes fresh backup at commit
         time, and checks that source files haven't changed since staging.
@@ -857,3 +857,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
