@@ -1,4 +1,4 @@
-﻿"""
+"""
 Zen Sync native messaging host.
 
 Communicates with the WebExtension via Mozilla native messaging (stdio JSON).
@@ -207,23 +207,23 @@ def _validate_stage_id(stage_id: str, profile: Path) -> Path | None:
 
 def is_zen_running() -> bool:
     """Detect if Zen Browser is currently running."""
-    import subprocess  # nosec B404 â€” trusted process detection only
+    import subprocess  # nosec
     system = platform.system()
     try:
         if system == "Windows":
-            result = subprocess.run(  # nosec â€” trusted 'tasklist' command
+            result = subprocess.run(  # nosec
                 ["tasklist", "/FI", "IMAGENAME eq zen.exe", "/NH"],
                 capture_output=True, text=True, timeout=5
             )
             return "zen.exe" in result.stdout.lower()
         elif system == "Darwin":
-            result = subprocess.run(  # nosec â€” trusted 'pgrep' command
+            result = subprocess.run(  # nosec
                 ["pgrep", "-x", "zen"],
                 capture_output=True, text=True, timeout=5
             )
             return result.returncode == 0
         else:
-            result = subprocess.run(  # nosec â€” trusted 'pgrep' command
+            result = subprocess.run(  # nosec
                 ["pgrep", "-x", "zen"],
                 capture_output=True, text=True, timeout=5
             )
@@ -473,9 +473,9 @@ def delete_key(account_id: str) -> bool:
         import keyring
         keyring.delete_password("zensync", account_id)
     except ImportError:
-        pass  # nosec B110 â€” keyring not installed, nothing to delete
+        pass  # nosec
     except Exception:
-        pass  # nosec B110 â€” key may not exist, that's fine for delete
+        pass  # nosec
     return True
 
 

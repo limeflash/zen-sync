@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Zen Sync â€” unified installer.
 
@@ -20,7 +20,7 @@ import json
 import os
 import platform
 import shutil
-import subprocess  # nosec B404 â€” trusted installer commands (venv, pip, reg)
+import subprocess  # nosec
 import sys
 from pathlib import Path
 
@@ -40,7 +40,7 @@ def venv_python() -> Path:
 
 def run(cmd: list[str], **kw) -> None:
     print(f"  $ {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True, **kw)  # nosec B603 â€” trusted commands only
+    result = subprocess.run(cmd, capture_output=True, text=True, **kw)  # nosec
     if result.returncode != 0:
         if result.stderr:
             print(f"  STDERR: {result.stderr.strip()}")
@@ -212,7 +212,7 @@ def status() -> None:
 
     if platform.system() == "Windows":
         key = rf"HKCU\SOFTWARE\Mozilla\NativeMessagingHosts\{HOST_NAME}"
-        result = subprocess.run(  # nosec â€” trusted 'reg query' for status check
+        result = subprocess.run(  # nosec
             ["reg", "query", key, "/ve"],
             capture_output=True, text=True
         )
