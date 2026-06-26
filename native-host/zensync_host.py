@@ -139,23 +139,26 @@ def read_mozlz4(path: Path) -> Any:
     """Read and decompress a Mozilla .jsonlz4 file, returning parsed JSON.
 
     Guards against decompression bombs by capping uncompressed size.
+    Returns {} on corruption instead of crashing — sync continues with empty state.
     """
     import lz4.block
     import struct
 
     MAX_UNCOMPRESSED_SIZE = 64 * 1024 * 1024  # 64 MB — session stores are typically < 1 MB
 
-    data = path.read_bytes()
-    magic = data[:8]
-    if magic != b"mozLz40\x00":
-        raise ValueError(f"not a mozlz4 file: {path} (magic={magic!r})")
-    uncompressed_size = struct.unpack("<I", data[8:12])[0]
-    if uncompressed_size > MAX_UNCOMPRESSED_SIZE:
-        raise ValueError(
-            f"uncompressed size {uncompressed_size} exceeds limit {MAX_UNCOMPRESSED_SIZE}"
-        )
-    decompressed = lz4.block.decompress(data[12:], uncompressed_size=uncompressed_size)
-    return json.loads(decompressed.decode("utf-8"))
+    try:
+        data = path.read_bytes()
+        magic = data[:8]
+        if magic != b"mozLz40\x00":
+            return {}
+        uncompressed_size = struct.unpack("<I", data[8:12])[0]
+        if uncompressed_size > MAX_UNCOMPRESSED_SIZE:
+            return {}
+        decompressed = lz4.block.decompress(data[12:], uncompressed_size=uncompressed_size)
+        return json.loads(decompressed.decode("utf-8"))
+    except Exception:
+        # Corrupted/truncated session file — return empty state, don't crash sync
+        return {}
 
 
 # --- data extraction ---
@@ -284,7 +287,7 @@ def extract_state(profile_path: Path) -> dict[str, Any]:
 
 
 def derive_key(passphrase: str, salt: bytes) -> bytes:
-    """Derive a 32-byte key from passphrase + salt using Argon2id."""
+    """Derive a 32-byte encryption key from passphrase + salt using Argon2id."""
     try:
         from argon2.low_level import hash_secret_raw, Type
     except ImportError:
@@ -299,6 +302,27 @@ def derive_key(passphrase: str, salt: bytes) -> bytes:
         hash_len=32,
         type=Type.ID,
     )
+
+
+def derive_auth_token(enc_key: bytes) -> bytes:
+    """Derive a separate auth token from the encryption key via HMAC-SHA256.
+
+    The auth token is sent to the server for authentication.
+    The server stores only a hash of it — never the encryption key.
+    """
+    import hashlib
+    import hmac
+    return hmac.new(enc_key, b"zensync_auth_token", hashlib.sha256).digest()
+
+
+def derive_auth_token_hash(auth_token: bytes) -> str:
+    """Hash the auth token for server-side storage (bcrypt-like via SHA256 + salt).
+
+    The server stores this hash. Even if the server DB leaks,
+    the auth token (and thus the encryption key) cannot be recovered.
+    """
+    import hashlib
+    return hashlib.sha256(auth_token + b"zensync_server_salt").hexdigest()
 
 
 def encrypt(key: bytes, plaintext: bytes) -> tuple[bytes, bytes]:
@@ -392,6 +416,52 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
         salt = base64.b64decode(salt_b64)
         store_key(account_id, passphrase, salt)
         return {"ok": True}
+
+    if action == "derive_auth":
+        """Derive auth token + hash from passphrase+salt for server registration/auth.
+        Returns auth_token (hex, sent to server on every request) and auth_hash
+        (sent once at registration, server stores only the hash)."""
+        passphrase = msg.get("passphrase", "")
+        salt_b64 = msg.get("salt", "")
+        if not all([passphrase, salt_b64]):
+            return {"ok": False, "error": "passphrase and salt are required"}
+        salt = base64.b64decode(salt_b64)
+        enc_key = derive_key(passphrase, salt)
+        auth_token = derive_auth_token(enc_key)
+        auth_hash = derive_auth_token_hash(auth_token)
+        return {
+            "ok": True,
+            "auth_token": auth_token.hex(),
+            "auth_hash": auth_hash,
+        }
+
+    if action == "get_auth_token":
+        """Get stored auth token from keyring (derived at setup time)."""
+        account_id = msg.get("accountId", "")
+        if not account_id:
+            return {"ok": False, "error": "accountId is required"}
+        # auth token is stored alongside enc key in keyring
+        try:
+            import keyring
+            auth_hex = keyring.get_password("zensync_auth", account_id)
+            if auth_hex:
+                return {"ok": True, "auth_token": auth_hex}
+        except Exception:
+            pass
+        return {"ok": False, "error": "auth token not found in keyring"}
+
+    if action == "store_auth_token":
+        """Store auth token in keyring separately from enc key."""
+        account_id = msg.get("accountId", "")
+        auth_token_hex = msg.get("authToken", "")
+        if not all([account_id, auth_token_hex]):
+            return {"ok": False, "error": "accountId and authToken are required"}
+        try:
+            import keyring
+            keyring.set_password("zensync_auth", account_id, auth_token_hex)
+            return {"ok": True}
+        except Exception as e:
+            raise RuntimeError(f"keyring unavailable: {e}")
 
     if action == "has_key":
         account_id = msg.get("accountId", "")

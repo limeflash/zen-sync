@@ -90,8 +90,9 @@ def check_ip_register_limit(ip: str) -> None:
 # --- db ---
 @contextmanager
 def get_db():
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=10)  # wait up to 10s on lock
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 5000")
     conn.execute("PRAGMA foreign_keys=ON")
     try:
         yield conn
@@ -109,6 +110,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS accounts (
                 id TEXT PRIMARY KEY,
                 salt BLOB NOT NULL,
+                auth_hash TEXT NOT NULL,
                 created_at REAL NOT NULL
             );
             CREATE TABLE IF NOT EXISTS devices (
@@ -145,6 +147,7 @@ def _startup():
 class RegisterRequest(BaseModel):
     salt: str = Field(..., description="Argon2id salt, base64-encoded")
     token: str = Field("", description="Registration token (required if ZENSYNC_REG_TOKEN is set)")
+    auth_hash: str = Field(..., description="SHA256 hash of auth token (for server-side auth)")
 
     @field_validator("salt")
     @classmethod
@@ -217,15 +220,32 @@ class BlobEntry(BaseModel):
 
 
 # --- auth helpers ---
-def require_account(x_account_id: Optional[str] = Header(None)) -> str:
+def require_account(
+    x_account_id: Optional[str] = Header(None),
+    x_auth_token: Optional[str] = Header(None),
+) -> str:
     if not x_account_id:
         raise HTTPException(401, "missing X-Account-Id header")
+    if not x_auth_token:
+        raise HTTPException(401, "missing X-Auth-Token header")
     with get_db() as conn:
         row = conn.execute(
-            "SELECT id FROM accounts WHERE id = ?", (x_account_id,)
+            "SELECT auth_hash FROM accounts WHERE id = ?", (x_account_id,)
         ).fetchone()
     if not row:
         raise HTTPException(403, "invalid account")
+    # Verify auth token hash matches stored hash
+    import hashlib
+    # x_auth_token is hex string; convert to bytes for hashing
+    try:
+        auth_token_bytes = bytes.fromhex(x_auth_token)
+    except ValueError:
+        raise HTTPException(403, "invalid auth token format")
+    expected_hash = hashlib.sha256(
+        auth_token_bytes + b"zensync_server_salt"
+    ).hexdigest()
+    if not _const_time_eq(expected_hash, row["auth_hash"]):
+        raise HTTPException(403, "invalid auth token")
     check_rate_limit(x_account_id)
     return x_account_id
 
@@ -233,8 +253,9 @@ def require_account(x_account_id: Optional[str] = Header(None)) -> str:
 def require_device(
     x_account_id: Optional[str] = Header(None),
     x_device_id: Optional[str] = Header(None),
+    x_auth_token: Optional[str] = Header(None),
 ) -> tuple[str, str]:
-    account_id = require_account(x_account_id)
+    account_id = require_account(x_account_id, x_auth_token)
     if not x_device_id:
         raise HTTPException(401, "missing X-Device-Id header")
     with get_db() as conn:
@@ -270,8 +291,8 @@ def register(req: RegisterRequest, request: Request):
     salt_bytes = base64.b64decode(req.salt)
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO accounts (id, salt, created_at) VALUES (?, ?, ?)",
-            (account_id, salt_bytes, time.time()),
+            "INSERT INTO accounts (id, salt, auth_hash, created_at) VALUES (?, ?, ?, ?)",
+            (account_id, salt_bytes, req.auth_hash, time.time()),
         )
     return RegisterResponse(account_id=account_id)
 
@@ -279,9 +300,10 @@ def register(req: RegisterRequest, request: Request):
 @app.post("/api/devices", response_model=DeviceResponse)
 def register_device(
     req: DeviceRequest,
-    account_id: str = Header(..., alias="X-Account-Id"),
+    x_account_id: str = Header(..., alias="X-Account-Id"),
+    x_auth_token: Optional[str] = Header(None),
 ):
-    account_id = require_account(account_id)
+    account_id = require_account(x_account_id, x_auth_token)
 
     with get_db() as conn:
         count = conn.execute(
@@ -309,8 +331,11 @@ def register_device(
 
 
 @app.get("/api/devices", response_model=list[DeviceResponse])
-def list_devices(account_id: str = Header(..., alias="X-Account-Id")):
-    account_id = require_account(account_id)
+def list_devices(
+    x_account_id: str = Header(..., alias="X-Account-Id"),
+    x_auth_token: Optional[str] = Header(None),
+):
+    account_id = require_account(x_account_id, x_auth_token)
     with get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM devices WHERE account_id = ? ORDER BY created_at",
@@ -330,10 +355,11 @@ def list_devices(account_id: str = Header(..., alias="X-Account-Id")):
 @app.post("/api/blobs")
 def publish_blob(
     req: PublishBlobRequest,
-    account_id: str = Header(..., alias="X-Account-Id"),
-    device_id: str = Header(..., alias="X-Device-Id"),
+    x_account_id: str = Header(..., alias="X-Account-Id"),
+    x_device_id: str = Header(..., alias="X-Device-Id"),
+    x_auth_token: Optional[str] = Header(None),
 ):
-    account_id, device_id = require_device(account_id, device_id)
+    account_id, device_id = require_device(x_account_id, x_device_id, x_auth_token)
 
     blob_id = str(uuid.uuid4())
     now = time.time()
@@ -376,12 +402,13 @@ def publish_blob(
 def pull_blobs(
     request: Request,
     response: Response,
-    account_id: str = Header(..., alias="X-Account-Id"),
-    device_id: str = Header(..., alias="X-Device-Id"),
+    x_account_id: str = Header(..., alias="X-Account-Id"),
+    x_device_id: str = Header(..., alias="X-Device-Id"),
+    x_auth_token: Optional[str] = Header(None),
     since: float = 0.0,
     limit: int = MAX_PULL_RESULTS,
 ):
-    account_id, device_id = require_device(account_id, device_id)
+    account_id, device_id = require_device(x_account_id, x_device_id, x_auth_token)
 
     if since < 0:
         since = 0.0

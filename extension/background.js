@@ -55,12 +55,16 @@ async function getRelayUrl() {
 async function relayRequest(path, method = "GET", body = null, headers = {}) {
   const RELAY_TIMEOUT_MS = 15000;
   const relayUrl = await getRelayUrl();
+  const stored = await browser.storage.local.get("authToken");
+  const authToken = stored.authToken || "";
+  const allHeaders = { "Content-Type": "application/json", ...headers };
+  if (authToken) allHeaders["X-Auth-Token"] = authToken;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RELAY_TIMEOUT_MS);
   try {
     const req = {
       method,
-      headers: { "Content-Type": "application/json", ...headers },
+      headers: allHeaders,
       signal: controller.signal,
     };
     if (body) req.body = JSON.stringify(body);
@@ -92,6 +96,7 @@ async function getStoredState() {
     "deviceId",
     "deviceName",
     "salt",
+    "authToken",
     "lastSyncTimestamp",
   ]);
 }
@@ -226,14 +231,29 @@ async function setupAccount(passphrase, deviceName, token, relayUrl) {
     await browser.storage.local.set({ relayUrl });
   }
 
+  // 1. Derive auth token + hash via native host
+  console.log("[zensync] setup: deriving auth token...");
+  const authResp = await sendToNative({
+    action: "derive_auth",
+    passphrase: passphrase,
+    salt: saltB64,
+  });
+  if (!authResp.ok) {
+    return { ok: false, error: `derive_auth: ${authResp.error}` };
+  }
+  const authToken = authResp.auth_token;
+  const authHash = authResp.auth_hash;
+
+  // 2. Register on relay (sends auth_hash, server stores hash only)
   console.log("[zensync] setup: registering on relay...");
   const regResp = await relayRequest("/api/register", "POST", {
     salt: saltB64,
     token: token || "",
+    auth_hash: authHash,
   });
   console.log("[zensync] setup: account registered:", regResp.account_id);
 
-  // Register device
+  // 3. Register device
   console.log("[zensync] setup: registering device...");
   const deviceResp = await relayRequest(
     "/api/devices",
@@ -243,7 +263,7 @@ async function setupAccount(passphrase, deviceName, token, relayUrl) {
   );
   console.log("[zensync] setup: device registered:", deviceResp.device_id);
 
-  // Store derived key in OS keyring via native host (passphrase never persisted)
+  // 4. Store enc key + auth token in OS keyring
   console.log("[zensync] setup: storing key in native host (Argon2id, may take a few seconds)...");
   const keyResp = await sendToNative({
     action: "store_key",
@@ -251,9 +271,17 @@ async function setupAccount(passphrase, deviceName, token, relayUrl) {
     passphrase: passphrase,
     salt: saltB64,
   });
-  console.log("[zensync] setup: store_key response:", keyResp.ok);
   if (!keyResp.ok) {
     return { ok: false, error: `failed to store key: ${keyResp.error}` };
+  }
+  // Store auth token in keyring too
+  const storeAuthResp = await sendToNative({
+    action: "store_auth_token",
+    accountId: regResp.account_id,
+    authToken: authToken,
+  });
+  if (!storeAuthResp.ok) {
+    return { ok: false, error: `failed to store auth token: ${storeAuthResp.error}` };
   }
 
   await browser.storage.local.set({
@@ -261,6 +289,7 @@ async function setupAccount(passphrase, deviceName, token, relayUrl) {
     deviceId: deviceResp.device_id,
     deviceName: deviceName,
     salt: saltB64,
+    authToken: authToken,
     lastSyncTimestamp: 0,
   });
   console.log("[zensync] setup: complete");
@@ -274,7 +303,18 @@ async function joinAccount(accountId, passphrase, saltB64, deviceName, relayUrl)
     await browser.storage.local.set({ relayUrl });
   }
 
-  // Register device under existing account
+  // 1. Derive auth token from passphrase+salt (same as setup, salt is shared)
+  const authResp = await sendToNative({
+    action: "derive_auth",
+    passphrase: passphrase,
+    salt: saltB64,
+  });
+  if (!authResp.ok) {
+    return { ok: false, error: `derive_auth: ${authResp.error}` };
+  }
+  const authToken = authResp.auth_token;
+
+  // 2. Register device under existing account
   const deviceResp = await relayRequest(
     "/api/devices",
     "POST",
@@ -282,7 +322,7 @@ async function joinAccount(accountId, passphrase, saltB64, deviceName, relayUrl)
     { "X-Account-Id": accountId }
   );
 
-  // Store derived key in OS keyring
+  // 3. Store enc key + auth token in OS keyring
   const keyResp = await sendToNative({
     action: "store_key",
     accountId: accountId,
@@ -292,12 +332,21 @@ async function joinAccount(accountId, passphrase, saltB64, deviceName, relayUrl)
   if (!keyResp.ok) {
     return { ok: false, error: `failed to store key: ${keyResp.error}` };
   }
+  const storeAuthResp = await sendToNative({
+    action: "store_auth_token",
+    accountId: accountId,
+    authToken: authToken,
+  });
+  if (!storeAuthResp.ok) {
+    return { ok: false, error: `failed to store auth token: ${storeAuthResp.error}` };
+  }
 
   await browser.storage.local.set({
     accountId: accountId,
     deviceId: deviceResp.device_id,
     deviceName: deviceName,
     salt: saltB64,
+    authToken: authToken,
     lastSyncTimestamp: 0,
   });
 
