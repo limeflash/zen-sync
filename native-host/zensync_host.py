@@ -208,6 +208,7 @@ def _validate_stage_id(stage_id: str, profile: Path) -> Path | None:
 def is_zen_running() -> bool:
     """Detect if Zen Browser is currently running."""
     import subprocess  # nosec
+    import platform
     system = platform.system()
     try:
         if system == "Windows":

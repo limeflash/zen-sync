@@ -369,6 +369,36 @@ def list_devices(
     ]
 
 
+@app.patch("/api/devices/{device_id}", response_model=DeviceResponse)
+def update_device(
+    device_id: str,
+    req: DeviceRequest,
+    x_account_id: str = Header(..., alias="X-Account-Id"),
+    x_auth_token: Optional[str] = Header(None),
+):
+    account_id = require_account(x_account_id, x_auth_token)
+    with get_db() as conn:
+        device = conn.execute(
+            "SELECT * FROM devices WHERE id = ? AND account_id = ?",
+            (device_id, account_id),
+        ).fetchone()
+        if not device:
+            raise HTTPException(404, "device not found")
+        conn.execute(
+            "UPDATE devices SET name = ?, last_seen = ? WHERE id = ?",
+            (req.name, time.time(), device_id),
+        )
+        row = conn.execute(
+            "SELECT * FROM devices WHERE id = ?", (device_id,)
+        ).fetchone()
+    return DeviceResponse(
+        device_id=row["id"],
+        name=row["name"],
+        created_at=row["created_at"],
+        last_seen=row["last_seen"],
+    )
+
+
 @app.delete("/api/devices/{device_id}")
 def delete_device(
     device_id: str,

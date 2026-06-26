@@ -507,6 +507,29 @@ async function importTabsLive() {
   };
 }
 
+async function renameDevice(newName) {
+  const stored = await browser.storage.local.get(["accountId", "deviceId"]);
+  if (!stored.accountId || !stored.deviceId) {
+    return { ok: false, error: "not configured" };
+  }
+  try {
+    const deviceResp = await relayRequest(
+      `/api/devices/${stored.deviceId}`,
+      "PATCH",
+      { name: newName },
+      { "X-Account-Id": stored.accountId }
+    );
+    if (deviceResp && deviceResp.device_id) {
+      await browser.storage.local.set({ deviceName: newName });
+      return { ok: true };
+    }
+    return { ok: false, error: "failed to rename on server" };
+  } catch (e) {
+    console.error("[zensync] renameDevice error:", e);
+    return { ok: false, error: e.message || "server error" };
+  }
+}
+
 // --- message handler (from popup) ---
 
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -523,6 +546,9 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
       case "commit-apply":
           sendResponse(await commitApply());
+          break;
+      case "rename-device":
+          sendResponse(await renameDevice(message.name));
           break;
       case "import-tabs":
           sendResponse(await importTabsLive());

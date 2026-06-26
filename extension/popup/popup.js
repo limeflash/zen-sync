@@ -128,12 +128,18 @@ async function refreshStatus() {
       $("btn-sync").disabled = true;
       $("sync-card").style.display = "none";
       $("account-info").style.display = "none";
+      $("btn-edit-device").style.display = "none";
+      $("edit-device-container").style.display = "none";
+      $("status-device").style.display = "inline";
       return;
     }
 
     dot.className = "status-dot ok";
     text.textContent = "Connected";
     $("status-device").textContent = status.deviceName || "—";
+    $("status-device").style.display = "inline";
+    $("btn-edit-device").style.display = "inline-block";
+    $("edit-device-container").style.display = "none";
     $("status-account").textContent = status.accountId
       ? `${status.accountId.slice(0, 8)}…${status.accountId.slice(-4)}`
       : "—";
@@ -178,6 +184,50 @@ async function refreshStatus() {
 }
 
 $("btn-refresh").addEventListener("click", refreshStatus);
+
+// --- rename device ---
+$("btn-edit-device").addEventListener("click", () => {
+  const currentName = $("status-device").textContent;
+  $("input-device-name").value = currentName === "—" ? "" : currentName;
+  $("status-device").style.display = "none";
+  $("btn-edit-device").style.display = "none";
+  $("edit-device-container").style.display = "inline-flex";
+  $("input-device-name").focus();
+});
+
+$("btn-cancel-device").addEventListener("click", () => {
+  $("status-device").style.display = "inline";
+  $("btn-edit-device").style.display = "inline-block";
+  $("edit-device-container").style.display = "none";
+});
+
+$("btn-save-device").addEventListener("click", async () => {
+  const newName = $("input-device-name").value.trim();
+  if (!newName) {
+    showToast("Device name cannot be empty", "error");
+    return;
+  }
+  const saveBtn = $("btn-save-device");
+  saveBtn.disabled = true;
+  saveBtn.textContent = "...";
+  try {
+    const res = await sendToBg({ action: "rename-device", name: newName });
+    if (res.ok) {
+      showToast("Device renamed successfully", "success");
+      $("status-device").textContent = newName;
+      $("status-device").style.display = "inline";
+      $("btn-edit-device").style.display = "inline-block";
+      $("edit-device-container").style.display = "none";
+    } else {
+      showToast(res.error || "Failed to rename device", "error");
+    }
+  } catch (e) {
+    showToast(e.message || "Error renaming device", "error");
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Save";
+  }
+});
 
 // --- apply remote state: safe (stage + commit) ---
 $("btn-apply").addEventListener("click", async () => {
