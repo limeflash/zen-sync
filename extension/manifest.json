@@ -6,11 +6,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "zensync@limeflash.dev",
-      "strict_min_version": "115.0",
-      "data_collection_permissions": {
-        "techdata_collected": false,
-        "interactiondata_collected": false
-      }
+      "strict_min_version": "115.0"
     }
   },
   "permissions": [

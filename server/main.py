@@ -303,7 +303,7 @@ def register(req: RegisterRequest, request: Request):
         if not req.token or not _const_time_eq(req.token, REGISTRATION_TOKEN):
             raise HTTPException(403, "registration closed")
     # IP rate limit (prevents DoS via repeated registration)
-    check_ip_register_limit(request.client.host if request.client else "0.0.0.0")
+    check_ip_register_limit(request.client.host if request.client else "unknown")
     account_id = str(uuid.uuid4())
     salt_bytes = base64.b64decode(req.salt)
     with get_db() as conn:

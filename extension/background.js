@@ -78,6 +78,7 @@ async function relayRequest(path, method = "GET", body = null, headers = {}) {
       data._responseHeaders = {
         "X-Has-More": res.headers.get("X-Has-More"),
         "X-Next-Cursor": res.headers.get("X-Next-Cursor"),
+        "X-Next-Cursor-Id": res.headers.get("X-Next-Cursor-Id"),
       };
       return data;
     } catch {
@@ -102,6 +103,7 @@ async function getStoredState() {
     "deviceName",
     "salt",
     "lastSyncTimestamp",
+    "lastSyncBlobId",
   ]);
 }
 
@@ -167,20 +169,14 @@ async function performSyncPull() {
   let sinceId = stored.lastSyncBlobId || "";
   const remoteStates = [];
   let totalPulled = 0;
-  const MAX_PAGES = 20; // safety budget — don't loop forever
+  const MAX_PAGES = 20;
 
-  // 1. Pull blobs with pagination loop (composite cursor: timestamp + blob_id)
   for (let page = 0; page < MAX_PAGES; page++) {
     let url = `/api/blobs?since=${since}`;
     if (sinceId) url += `&since_id=${sinceId}`;
     const resp = await relayRequest(
-      url,
-      "GET",
-      null,
-      {
-        "X-Account-Id": stored.accountId,
-        "X-Device-Id": stored.deviceId,
-      }
+      url, "GET", null,
+      { "X-Account-Id": stored.accountId, "X-Device-Id": stored.deviceId }
     );
 
     const blobs = resp.filter(b => !b._responseHeaders);
@@ -190,7 +186,7 @@ async function performSyncPull() {
       break;
     }
 
-    // 2. Decrypt each blob (uses stored key from OS keyring)
+    // Decrypt each blob
     for (const blob of blobs) {
       const decryptResp = await sendToNative({
         action: "decrypt",
@@ -208,18 +204,19 @@ async function performSyncPull() {
       totalPulled++;
     }
 
-    // Check for more pages
-    if (headers["X-Has-More"] !== "true") {
-      break;
-    }
+    // Advance cursor AFTER every non-empty page (before checking has_more)
+    const lastBlob = blobs[blobs.length - 1];
+    since = lastBlob.timestamp;
+    sinceId = lastBlob.blob_id;
 
-    // Advance composite cursor
+    // Also use server headers if available (more reliable)
     if (headers["X-Next-Cursor"]) {
       since = parseFloat(headers["X-Next-Cursor"]);
-      sinceId = headers["X-Next-Cursor-Id"] || "";
-    } else if (blobs.length > 0) {
-      since = blobs[blobs.length - 1].timestamp;
-      sinceId = blobs[blobs.length - 1].blob_id;
+      sinceId = headers["X-Next-Cursor-Id"] || sinceId;
+    }
+
+    if (headers["X-Has-More"] !== "true") {
+      break;
     }
   }
 
