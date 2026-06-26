@@ -360,12 +360,12 @@ async function joinAccount(accountId, passphrase, saltB64, deviceName, relayUrl)
   }
   const authToken = authResp.auth_token;
 
-  // 2. Register device under existing account
+  // 2. Register device under existing account — pass auth token directly
   const deviceResp = await relayRequest(
     "/api/devices",
     "POST",
     { name: deviceName },
-    { "X-Account-Id": accountId }
+    { "X-Account-Id": accountId, "X-Auth-Token": authToken }
   );
 
   // 3. Store enc key + auth token in OS keyring
