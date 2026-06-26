@@ -370,6 +370,28 @@ browser.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+// --- apply remote state ---
+
+async function applyRemoteState() {
+  // Get the latest remote state from storage
+  const stored = await browser.storage.local.get(["lastRemoteState", "lastRemoteDevice", "lastRemoteTime"]);
+  if (!stored.lastRemoteState) {
+    return { ok: false, error: "no remote state available — sync first" };
+  }
+  console.log("[zensync] applying remote state from device:", stored.lastRemoteDevice);
+
+  try {
+    const resp = await sendToNative({ action: "apply_state", state: stored.lastRemoteState });
+    if (resp.ok) {
+      console.log("[zensync] apply_state:", resp.message);
+    }
+    return resp;
+  } catch (e) {
+    console.error("[zensync] apply_state error:", e);
+    return { ok: false, error: e.message };
+  }
+}
+
 // --- message handler (from popup) ---
 
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -380,6 +402,9 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case "sync-now":
           console.log("[zensync] starting sync...");
           sendResponse(await performSync());
+          break;
+      case "apply":
+          sendResponse(await applyRemoteState());
           break;
       case "setup":
           sendResponse(

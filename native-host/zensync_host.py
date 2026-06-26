@@ -171,6 +171,21 @@ def read_mozlz4(path: Path, fail_closed: bool = False) -> Any:
         return {}
 
 
+def write_mozlz4(path: Path, data: dict[str, Any]) -> None:
+    """Compress JSON to Mozilla .jsonlz4 format and write to file.
+
+    Format: 8-byte magic (mozLz40\\0) + 4-byte LE uncompressed size + LZ4 block.
+    Uses store_size=False — Mozilla stores size in the 4-byte header, not in LZ4 block.
+    """
+    import lz4.block
+    import struct
+
+    raw = json.dumps(data, ensure_ascii=False).encode("utf-8")
+    compressed = lz4.block.compress(raw, store_size=False)
+    header = b"mozLz40\x00" + struct.pack("<I", len(raw))
+    path.write_bytes(header + compressed)
+
+
 # --- data extraction ---
 
 
@@ -548,6 +563,95 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
             return {"ok": False, "error": "accountId is required"}
         delete_key(account_id)
         return {"ok": True}
+
+    if action == "apply_state":
+        """Apply remote state to the local Zen profile.
+
+        Steps:
+          1. Validate the remote state has required keys
+          2. Backup original files to .zensync_backup_<timestamp>/
+          3. Write zen-sessions.jsonlz4 (spaces, tabs, groups, folders, splitViewData)
+          4. Update containers.json (if containers present)
+          5. Return success with backup path
+
+        NOTE: Browser must be closed (or restarted after apply) for changes to take effect.
+        Zen restores from session store on startup.
+        """
+        state = msg.get("state", {})
+        if not state:
+            return {"ok": False, "error": "state is required"}
+
+        # Validate state has expected keys
+        required_keys = {"spaces", "tabs", "groups", "folders"}
+        missing = required_keys - set(state.keys())
+        if missing:
+            return {"ok": False, "error": f"state missing keys: {missing}"}
+
+        # Sanity check: refuse to apply empty/destructive state
+        if len(state.get("tabs", [])) == 0 and len(state.get("spaces", [])) == 0:
+            return {"ok": False, "error": "refusing to apply empty state (no tabs, no spaces)"}
+
+        profile = find_zen_profile()
+        if not profile:
+            return {"ok": False, "error": "no Zen profile found"}
+
+        import time as _time
+        import shutil
+
+        # 1. Create backup directory
+        backup_dir = profile / f".zensync_backup_{int(_time.time())}"
+        backup_dir.mkdir(exist_ok=True)
+
+        # 2. Backup files we're about to modify
+        files_to_backup = [
+            "zen-sessions.jsonlz4",
+            "sessionstore.jsonlz4",
+            "sessionstore-backups/recovery.jsonlz4",
+            "containers.json",
+        ]
+        for f in files_to_backup:
+            src = profile / f
+            if src.exists():
+                dst = backup_dir / src.name
+                shutil.copy2(src, dst)
+
+        # 3. Write zen-sessions.jsonlz4
+        zen_sessions_data = {
+            "spaces": state.get("spaces", []),
+            "tabs": state.get("tabs", []),
+            "groups": state.get("groups", []),
+            "folders": state.get("folders", []),
+            "splitViewData": state.get("split_views", []),
+            "lastCollected": _time.time() * 1000,
+        }
+        write_mozlz4(profile / "zen-sessions.jsonlz4", zen_sessions_data)
+
+        # 4. Update containers.json if containers present
+        if state.get("containers"):
+            containers_file = profile / "containers.json"
+            existing = {}
+            if containers_file.exists():
+                try:
+                    existing = json.loads(containers_file.read_text("utf-8"))
+                except Exception:
+                    existing = {}
+
+            # Merge: keep existing internal identities, update synced public ones
+            existing_identities = existing.get("identities", [])
+            synced_ids = {c["userContextId"] for c in state["containers"] if c.get("userContextId")}
+            # Keep internal (non-public) identities, replace public synced ones
+            kept = [i for i in existing_identities if i.get("userContextId") not in synced_ids]
+            new_identities = kept + state["containers"]
+            existing["identities"] = new_identities
+            containers_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+        return {
+            "ok": True,
+            "backup_dir": str(backup_dir),
+            "tabs_written": len(state.get("tabs", [])),
+            "spaces_written": len(state.get("spaces", [])),
+            "message": "State applied. Restart Zen Browser to see changes. Backup saved to: " + str(backup_dir),
+        }
 
     return {"ok": False, "error": f"unknown action: {action}"}
 

@@ -94,7 +94,11 @@ async function refreshStatus() {
     $("status-account").textContent = status.accountId
       ? `${status.accountId.slice(0, 8)}…${status.accountId.slice(-4)}`
       : "—";
-    $("btn-sync").disabled = false;
+      $("btn-sync").disabled = false;
+      // Enable apply if we have remote state
+      browser.storage.local.get("lastRemoteState").then(s => {
+        $("btn-apply").disabled = !s.lastRemoteState;
+      });
 
     if (status.lastSync) {
       $("sync-card").style.display = "block";
@@ -129,6 +133,32 @@ async function refreshStatus() {
 }
 
 $("btn-refresh").addEventListener("click", refreshStatus);
+
+// --- apply remote state ---
+$("btn-apply").addEventListener("click", async () => {
+  const btn = $("btn-apply");
+  const btnText = $("btn-apply-text");
+  btn.disabled = true;
+  btnText.textContent = "Applying…";
+  try {
+    const result = await sendToBg({ action: "apply" });
+    if (result.ok) {
+      btnText.textContent = "Applied!";
+      showToast("State applied. Restart Zen Browser to see changes.", "success");
+      console.log("[zensync] apply result:", result);
+    } else {
+      btnText.textContent = "Error";
+      showToast(result.error || "Apply failed", "error");
+    }
+  } catch (e) {
+    btnText.textContent = "Error";
+    showToast(e.message, "error");
+  }
+  setTimeout(() => {
+    btnText.textContent = "Apply Remote State";
+    btn.disabled = false;
+  }, 3000);
+});
 
 // --- sync ---
 $("btn-sync").addEventListener("click", async () => {
