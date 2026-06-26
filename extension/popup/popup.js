@@ -33,33 +33,41 @@ document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () =>
 // --- auto-save form state (survives popup close/reopen) ---
 const FORM_STORAGE_KEY = "zensync_form_draft";
 
-async function saveFormDraft() {
-  const draft = {
-    setup_device: $("setup-device").value,
-    setup_relay: $("setup-relay").value,
-    setup_token: $("setup-token").value,
-    join_relay: $("join-relay").value,
-    join_account: $("join-account").value,
-    join_salt: $("join-salt").value,
-    join_device: $("join-device").value,
-  };
-  await browser.storage.local.set({ [FORM_STORAGE_KEY]: draft });
+function saveFormDraft() {
+  // Fire-and-forget: don't await, popup may close before promise resolves
+  browser.storage.local.set({
+    [FORM_STORAGE_KEY]: {
+      setup_device: $("setup-device")?.value || "",
+      setup_relay: $("setup-relay")?.value || "",
+      setup_token: $("setup-token")?.value || "",
+      join_relay: $("join-relay")?.value || "",
+      join_account: $("join-account")?.value || "",
+      join_salt: $("join-salt")?.value || "",
+      join_device: $("join-device")?.value || "",
+    }
+  });
 }
 
-async function loadFormDraft() {
-  const stored = await browser.storage.local.get(FORM_STORAGE_KEY);
-  const draft = stored[FORM_STORAGE_KEY];
-  if (!draft) return;
-  for (const [id, val] of Object.entries(draft)) {
-    const el = $(id);
-    if (el && val) el.value = val;
-  }
+function loadFormDraft() {
+  return browser.storage.local.get(FORM_STORAGE_KEY).then(stored => {
+    const draft = stored[FORM_STORAGE_KEY];
+    if (!draft) return;
+    for (const [id, val] of Object.entries(draft)) {
+      const el = $(id);
+      if (el && val) el.value = val;
+    }
+  });
 }
 
-// Auto-save on every input change
+// Auto-save on every keystroke + on blur (popup close)
 document.querySelectorAll("input").forEach(el => {
   el.addEventListener("input", saveFormDraft);
+  el.addEventListener("change", saveFormDraft);
+  el.addEventListener("blur", saveFormDraft);
 });
+
+// Save on popup unload (last chance before close)
+window.addEventListener("beforeunload", saveFormDraft);
 
 // --- toast ---
 function showToast(msg, type = "") {
@@ -312,16 +320,7 @@ $("btn-setup").addEventListener("click", async () => {
       $("setup-pass").value = "";
       $("setup-pass2").value = "";
       $("setup-token").value = "";
-      // Clear draft (keep relay URL + device name for reference, remove token)
-      await browser.storage.local.set({ [FORM_STORAGE_KEY]: {
-        setup_device: $("setup-device").value,
-        setup_relay: $("setup-relay").value,
-        setup_token: "",
-        join_relay: $("setup-relay").value,
-        join_account: "",
-        join_salt: "",
-        join_device: "",
-      }});
+      // Clear token from draft, keep relay URL + device name
       saveFormDraft();
       setTimeout(() => switchTab("status"), 800);
     } else {
@@ -356,16 +355,7 @@ $("btn-join").addEventListener("click", async () => {
     if (result.ok) {
       showToast("Joined!", "success");
       $("join-pass").value = "";
-      // Clear sensitive draft (keep relay + device name)
-      await browser.storage.local.set({ [FORM_STORAGE_KEY]: {
-        setup_relay: relayUrl,
-        join_relay: relayUrl,
-        join_account: "",
-        join_salt: "",
-        join_device: deviceName,
-        setup_device: "",
-        setup_token: "",
-      }});
+      saveFormDraft();
       setTimeout(() => switchTab("status"), 800);
     } else {
       showToast(result.error || "Join failed", "error");
