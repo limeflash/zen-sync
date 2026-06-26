@@ -229,8 +229,11 @@ zen-sync/
 | Lost passphrase | Not recoverable; by design. Lose key = lose data |
 | Malicious extension update | Extension is self-hosted / signed; native host verifies origin |
 | Stale sync overwriting new | Per-workspace logical clock; LWW with monotonic counter |
-| Auth bypass | All relay endpoints verify account + device existence |
-| Rate limiting | 60 req/min per account (configurable) |
+| Auth bypass | All relay endpoints verify account + device + auth token (HMAC-derived) |
+| Rate limiting | 60 req/min per account, 5 registrations/hour per IP |
+| Path traversal (staged apply) | Strict UUID validation + `.resolve()` containment check |
+
+**Known limitation:** If the relay database leaks, an attacker with the `salt` and `auth_hash` can test passphrase guesses offline. Argon2id raises the cost significantly, but weak passphrases are still at risk. Use a high-entropy passphrase (16+ characters). A future version may use PAKE/OPAQUE to eliminate this attack surface entirely.
 
 ## Acknowledgements
 
