@@ -55,9 +55,12 @@ async function getRelayUrl() {
 async function relayRequest(path, method = "GET", body = null, headers = {}) {
   const RELAY_TIMEOUT_MS = 15000;
   const relayUrl = await getRelayUrl();
-  const authToken = await getAuthToken();
   const allHeaders = { "Content-Type": "application/json", ...headers };
-  if (authToken) allHeaders["X-Auth-Token"] = authToken;
+  // If caller didn't explicitly provide X-Auth-Token, fetch from keyring
+  if (!allHeaders["X-Auth-Token"]) {
+    const authToken = await getAuthToken();
+    if (authToken) allHeaders["X-Auth-Token"] = authToken;
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RELAY_TIMEOUT_MS);
   try {
@@ -288,21 +291,22 @@ async function setupAccount(passphrase, deviceName, token, relayUrl) {
   const authHash = authResp.auth_hash;
 
   // 2. Register on relay (sends auth_hash, server stores hash only)
+  // No auth token needed for register — just reg token + auth_hash
   console.log("[zensync] setup: registering on relay...");
   const regResp = await relayRequest("/api/register", "POST", {
     salt: saltB64,
     token: token || "",
     auth_hash: authHash,
-  });
+  }, { "X-Auth-Token": "" }); // explicitly no auth token for register
   console.log("[zensync] setup: account registered:", regResp.account_id);
 
-  // 3. Register device
+  // 3. Register device — pass auth token directly (not yet in keyring)
   console.log("[zensync] setup: registering device...");
   const deviceResp = await relayRequest(
     "/api/devices",
     "POST",
     { name: deviceName },
-    { "X-Account-Id": regResp.account_id }
+    { "X-Account-Id": regResp.account_id, "X-Auth-Token": authToken }
   );
   console.log("[zensync] setup: device registered:", deviceResp.device_id);
 
