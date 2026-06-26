@@ -68,6 +68,10 @@ document.querySelectorAll("input").forEach(el => {
 
 // Save on popup unload (last chance before close)
 window.addEventListener("beforeunload", saveFormDraft);
+window.addEventListener("pagehide", saveFormDraft);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") saveFormDraft();
+});
 
 // --- toast ---
 function showToast(msg, type = "") {
@@ -458,6 +462,18 @@ $("btn-regen-qr").addEventListener("click", () => {
 
 // --- init ---
 loadTheme();
-loadFormDraft().then(() => {
+// Load draft FIRST (blocking), then refresh status
+browser.storage.local.get(FORM_STORAGE_KEY).then(stored => {
+  const draft = stored[FORM_STORAGE_KEY];
+  console.log("[zensync] loadFormDraft:", draft ? "has draft" : "no draft");
+  if (draft) {
+    for (const [id, val] of Object.entries(draft)) {
+      const el = $(id);
+      if (el && val) {
+        el.value = val;
+        console.log("[zensync] restored:", id, "=", val.substring(0, 20) + "...");
+      }
+    }
+  }
   refreshStatus();
 });
