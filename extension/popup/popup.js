@@ -95,9 +95,11 @@ async function refreshStatus() {
       ? `${status.accountId.slice(0, 8)}…${status.accountId.slice(-4)}`
       : "—";
       $("btn-sync").disabled = false;
-      // Enable apply if we have remote state
+      // Enable apply + import if we have remote state
       browser.storage.local.get("lastRemoteState").then(s => {
-        $("btn-apply").disabled = !s.lastRemoteState;
+        const hasRemote = !!s.lastRemoteState;
+        $("btn-apply").disabled = !hasRemote;
+        $("btn-import").disabled = !hasRemote;
       });
 
     if (status.lastSync) {
@@ -134,18 +136,24 @@ async function refreshStatus() {
 
 $("btn-refresh").addEventListener("click", refreshStatus);
 
-// --- apply remote state ---
+// --- apply remote state: safe (stage + commit) ---
 $("btn-apply").addEventListener("click", async () => {
   const btn = $("btn-apply");
   const btnText = $("btn-apply-text");
   btn.disabled = true;
-  btnText.textContent = "Applying…";
+  btnText.textContent = "Staging…";
   try {
     const result = await sendToBg({ action: "apply" });
     if (result.ok) {
-      btnText.textContent = "Applied!";
-      showToast("State applied. Restart Zen Browser to see changes.", "success");
-      console.log("[zensync] apply result:", result);
+      if (result.needs_restart) {
+        btnText.textContent = "Staged";
+        $("btn-commit").style.display = "inline-flex";
+        $("btn-commit").disabled = false;
+        showToast("Staged! Close Zen Browser, then click Commit.", "success");
+      } else {
+        btnText.textContent = "Applied!";
+        showToast("State applied. Open Zen Browser.", "success");
+      }
     } else {
       btnText.textContent = "Error";
       showToast(result.error || "Apply failed", "error");
@@ -155,7 +163,59 @@ $("btn-apply").addEventListener("click", async () => {
     showToast(e.message, "error");
   }
   setTimeout(() => {
-    btnText.textContent = "Apply Remote State";
+    btnText.textContent = "Safe Apply (restart)";
+    btn.disabled = false;
+  }, 3000);
+});
+
+// --- commit apply (after Zen closed) ---
+$("btn-commit").addEventListener("click", async () => {
+  const btn = $("btn-commit");
+  const btnText = $("btn-commit-text");
+  btn.disabled = true;
+  btnText.textContent = "Checking Zen…";
+  try {
+    const result = await sendToBg({ action: "commit-apply" });
+    if (result.ok) {
+      btnText.textContent = "Done!";
+      showToast("Applied! Open Zen Browser to see synced workspaces.", "success");
+      btn.style.display = "none";
+    } else {
+      btnText.textContent = "Commit Apply (Zen closed)";
+      showToast(result.error || "Commit failed", "error");
+    }
+  } catch (e) {
+    btnText.textContent = "Commit Apply (Zen closed)";
+    showToast(e.message, "error");
+  }
+  setTimeout(() => {
+    btnText.textContent = "Commit Apply (Zen closed)";
+    btn.disabled = false;
+  }, 3000);
+});
+
+// --- import tabs (live, no restart) ---
+$("btn-import").addEventListener("click", async () => {
+  const btn = $("btn-import");
+  const btnText = $("btn-import-text");
+  btn.disabled = true;
+  btnText.textContent = "Importing…";
+  try {
+    const result = await sendToBg({ action: "import-tabs" });
+    if (result.ok) {
+      btnText.textContent = `Imported ${result.created} tabs`;
+      const msg = `Imported ${result.created} tabs, ${result.failed} failed, ${result.skipped} skipped`;
+      showToast(msg, "success");
+    } else {
+      btnText.textContent = "Error";
+      showToast(result.error || "Import failed", "error");
+    }
+  } catch (e) {
+    btnText.textContent = "Error";
+    showToast(e.message, "error");
+  }
+  setTimeout(() => {
+    btnText.textContent = "Import Tabs (live)";
     btn.disabled = false;
   }, 3000);
 });

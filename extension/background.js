@@ -373,23 +373,115 @@ browser.alarms.onAlarm.addListener((alarm) => {
 // --- apply remote state ---
 
 async function applyRemoteState() {
-  // Get the latest remote state from storage
+  // Legacy direct apply (unsafe if Zen running)
   const stored = await browser.storage.local.get(["lastRemoteState", "lastRemoteDevice", "lastRemoteTime"]);
   if (!stored.lastRemoteState) {
     return { ok: false, error: "no remote state available — sync first" };
   }
-  console.log("[zensync] applying remote state from device:", stored.lastRemoteDevice);
-
   try {
     const resp = await sendToNative({ action: "apply_state", state: stored.lastRemoteState });
-    if (resp.ok) {
-      console.log("[zensync] apply_state:", resp.message);
-    }
     return resp;
   } catch (e) {
-    console.error("[zensync] apply_state error:", e);
     return { ok: false, error: e.message };
   }
+}
+
+async function stageAndApply() {
+  // Safe apply: stage → check Zen → commit (or instruct user to close)
+  const stored = await browser.storage.local.get(["lastRemoteState", "lastRemoteDevice"]);
+  if (!stored.lastRemoteState) {
+    return { ok: false, error: "no remote state available — sync first" };
+  }
+
+  // 1. Stage
+  console.log("[zensync] staging remote state...");
+  const stageResp = await sendToNative({ action: "stage_apply", state: stored.lastRemoteState });
+  if (!stageResp.ok) {
+    return { ok: false, error: `stage: ${stageResp.error}` };
+  }
+  console.log("[zensync] staged:", stageResp.stage_id, "Zen running:", stageResp.zen_running);
+
+  // 2. If Zen is running, instruct user to close
+  if (stageResp.zen_running) {
+    await browser.storage.local.set({ pendingStageId: stageResp.stage_id });
+    return {
+      ok: true,
+      needs_restart: true,
+      stage_id: stageResp.stage_id,
+      message: "State staged. Close Zen Browser, then click 'Commit Apply' to finish.",
+      tabs_count: stageResp.tabs_count,
+      spaces_count: stageResp.spaces_count,
+    };
+  }
+
+  // 3. Zen is closed — commit immediately
+  console.log("[zensync] Zen not running, committing...");
+  const commitResp = await sendToNative({ action: "commit_staged_apply", stage_id: stageResp.stage_id });
+  if (commitResp.ok) {
+    await browser.storage.local.set({ lastAppliedTimestamp: Date.now() });
+  }
+  return commitResp;
+}
+
+async function commitApply() {
+  // Commit after user closed Zen
+  const stored = await browser.storage.local.get("pendingStageId");
+  if (!stored.pendingStageId) {
+    return { ok: false, error: "no pending apply. Stage first." };
+  }
+
+  // Check if Zen is still running
+  const runningResp = await sendToNative({ action: "is_zen_running" });
+  if (runningResp.ok && runningResp.running) {
+    return { ok: false, error: "Zen Browser is still running. Please close it first." };
+  }
+
+  console.log("[zensync] committing staged apply...");
+  const resp = await sendToNative({ action: "commit_staged_apply", stage_id: stored.pendingStageId });
+  if (resp.ok) {
+    await browser.storage.local.remove("pendingStageId");
+    await browser.storage.local.set({ lastAppliedTimestamp: Date.now() });
+  }
+  return resp;
+}
+
+async function importTabsLive() {
+  // Live tabs-only import — no restart, non-destructive
+  const stored = await browser.storage.local.get("lastRemoteState");
+  if (!stored.lastRemoteState) {
+    return { ok: false, error: "no remote state available — sync first" };
+  }
+
+  // Get tab list from native host (filters privileged URLs)
+  const resp = await sendToNative({ action: "import_tabs", state: stored.lastRemoteState });
+  if (!resp.ok) {
+    return { ok: false, error: resp.error };
+  }
+
+  // Create tabs via WebExtension API
+  let created = 0;
+  let failed = 0;
+  for (const tab of resp.tabs) {
+    try {
+      await browser.tabs.create({
+        url: tab.url,
+        active: false,
+        pinned: tab.pinned || false,
+      });
+      created++;
+    } catch (e) {
+      console.warn("[zensync] failed to create tab:", tab.url, e);
+      failed++;
+    }
+  }
+
+  return {
+    ok: true,
+    created: created,
+    failed: failed,
+    skipped: resp.skipped,
+    note: resp.note,
+  };
 }
 
 // --- message handler (from popup) ---
@@ -404,7 +496,13 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(await performSync());
           break;
       case "apply":
-          sendResponse(await applyRemoteState());
+          sendResponse(await stageAndApply());
+          break;
+      case "commit-apply":
+          sendResponse(await commitApply());
+          break;
+      case "import-tabs":
+          sendResponse(await importTabsLive());
           break;
       case "setup":
           sendResponse(

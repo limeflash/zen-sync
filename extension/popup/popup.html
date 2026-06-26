@@ -110,12 +110,35 @@
         <span id="btn-sync-text">Sync Now</span>
       </button>
 
-      <button class="btn" id="btn-apply" disabled style="margin-top:8px">
+      <div class="divider"></div>
+
+      <div class="card-label">Apply Remote State</div>
+
+      <button class="btn btn-primary" id="btn-apply" disabled>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7"/><polyline points="12 3 12 15"/><polyline points="7 8 12 3 17 8"/>
         </svg>
-        <span id="btn-apply-text">Apply Remote State</span>
+        <span id="btn-apply-text">Safe Apply (restart)</span>
       </button>
+
+      <button class="btn" id="btn-commit" disabled style="margin-top:8px;display:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        <span id="btn-commit-text">Commit Apply (Zen closed)</span>
+      </button>
+
+      <button class="btn" id="btn-import" disabled style="margin-top:8px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+        <span id="btn-import-text">Import Tabs (live)</span>
+      </button>
+
+      <div class="hint" style="margin-top:8px">
+        <strong>Safe Apply</strong> — full sync (workspaces, folders, groups). Requires closing Zen.<br>
+        <strong>Import Tabs</strong> — opens remote URLs now. No restart, but workspace assignment not restored.
+      </div>
 
       <button class="btn btn-ghost btn-sm" id="btn-refresh" style="width:100%;margin-top:auto">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

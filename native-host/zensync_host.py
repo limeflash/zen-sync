@@ -186,6 +186,34 @@ def write_mozlz4(path: Path, data: dict[str, Any]) -> None:
     path.write_bytes(header + compressed)
 
 
+def is_zen_running() -> bool:
+    """Detect if Zen Browser is currently running."""
+    import subprocess
+    system = platform.system()
+    try:
+        if system == "Windows":
+            result = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq zen.exe", "/NH"],
+                capture_output=True, text=True, timeout=5
+            )
+            return "zen.exe" in result.stdout.lower()
+        elif system == "Darwin":
+            result = subprocess.run(
+                ["pgrep", "-x", "zen"],
+                capture_output=True, text=True, timeout=5
+            )
+            return result.returncode == 0
+        else:
+            result = subprocess.run(
+                ["pgrep", "-x", "zen"],
+                capture_output=True, text=True, timeout=5
+            )
+            return result.returncode == 0
+    except Exception:
+        # If detection fails, assume running (fail-closed — don't risk overwriting)
+        return True
+
+
 # --- data extraction ---
 
 
@@ -565,57 +593,28 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True}
 
     if action == "apply_state":
-        """Apply remote state to the local Zen profile.
-
-        Steps:
-          1. Validate the remote state has required keys
-          2. Backup original files to .zensync_backup_<timestamp>/
-          3. Write zen-sessions.jsonlz4 (spaces, tabs, groups, folders, splitViewData)
-          4. Update containers.json (if containers present)
-          5. Return success with backup path
-
-        NOTE: Browser must be closed (or restarted after apply) for changes to take effect.
-        Zen restores from session store on startup.
-        """
+        """Legacy direct apply — kept for backward compat but not recommended.
+        Use stage_apply + commit_staged_apply for safe flow."""
         state = msg.get("state", {})
         if not state:
             return {"ok": False, "error": "state is required"}
-
-        # Validate state has expected keys
         required_keys = {"spaces", "tabs", "groups", "folders"}
         missing = required_keys - set(state.keys())
         if missing:
             return {"ok": False, "error": f"state missing keys: {missing}"}
-
-        # Sanity check: refuse to apply empty/destructive state
         if len(state.get("tabs", [])) == 0 and len(state.get("spaces", [])) == 0:
             return {"ok": False, "error": "refusing to apply empty state (no tabs, no spaces)"}
-
         profile = find_zen_profile()
         if not profile:
             return {"ok": False, "error": "no Zen profile found"}
-
         import time as _time
         import shutil
-
-        # 1. Create backup directory
         backup_dir = profile / f".zensync_backup_{int(_time.time())}"
         backup_dir.mkdir(exist_ok=True)
-
-        # 2. Backup files we're about to modify
-        files_to_backup = [
-            "zen-sessions.jsonlz4",
-            "sessionstore.jsonlz4",
-            "sessionstore-backups/recovery.jsonlz4",
-            "containers.json",
-        ]
-        for f in files_to_backup:
+        for f in ["zen-sessions.jsonlz4", "sessionstore.jsonlz4", "sessionstore-backups/recovery.jsonlz4", "containers.json"]:
             src = profile / f
             if src.exists():
-                dst = backup_dir / src.name
-                shutil.copy2(src, dst)
-
-        # 3. Write zen-sessions.jsonlz4
+                shutil.copy2(src, backup_dir / src.name)
         zen_sessions_data = {
             "spaces": state.get("spaces", []),
             "tabs": state.get("tabs", []),
@@ -625,8 +624,6 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
             "lastCollected": _time.time() * 1000,
         }
         write_mozlz4(profile / "zen-sessions.jsonlz4", zen_sessions_data)
-
-        # 4. Update containers.json if containers present
         if state.get("containers"):
             containers_file = profile / "containers.json"
             existing = {}
@@ -635,23 +632,180 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
                     existing = json.loads(containers_file.read_text("utf-8"))
                 except Exception:
                     existing = {}
-
-            # Merge: keep existing internal identities, update synced public ones
             existing_identities = existing.get("identities", [])
             synced_ids = {c["userContextId"] for c in state["containers"] if c.get("userContextId")}
-            # Keep internal (non-public) identities, replace public synced ones
             kept = [i for i in existing_identities if i.get("userContextId") not in synced_ids]
-            new_identities = kept + state["containers"]
-            existing["identities"] = new_identities
+            existing["identities"] = kept + state["containers"]
             containers_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        return {"ok": True, "backup_dir": str(backup_dir), "tabs_written": len(state.get("tabs", [])), "spaces_written": len(state.get("spaces", [])), "message": "State applied. Restart Zen Browser to see changes. Backup saved to: " + str(backup_dir)}
+
+    if action == "is_zen_running":
+        return {"ok": True, "running": is_zen_running()}
+
+    if action == "stage_apply":
+        """Stage remote state for apply — does NOT modify live profile files.
+        Returns staged_apply_id. Use commit_staged_apply after Zen is closed."""
+        state = msg.get("state", {})
+        if not state:
+            return {"ok": False, "error": "state is required"}
+        required_keys = {"spaces", "tabs", "groups", "folders"}
+        missing = required_keys - set(state.keys())
+        if missing:
+            return {"ok": False, "error": f"state missing keys: {missing}"}
+        if len(state.get("tabs", [])) == 0 and len(state.get("spaces", [])) == 0:
+            return {"ok": False, "error": "refusing to stage empty state (no tabs, no spaces)"}
+        profile = find_zen_profile()
+        if not profile:
+            return {"ok": False, "error": "no Zen profile found"}
+
+        import time as _time
+        import shutil
+        import hashlib as _hl
+        stage_id = f"stage_{int(_time.time())}"
+        stage_dir = profile / ".zensync_staging" / stage_id
+        stage_dir.mkdir(parents=True, exist_ok=True)
+
+        # Backup originals
+        backup_manifest = {"timestamp": _time.time(), "files": {}}
+        for f in ["zen-sessions.jsonlz4", "sessionstore.jsonlz4", "sessionstore-backups/recovery.jsonlz4", "containers.json"]:
+            src = profile / f
+            if src.exists():
+                dst = stage_dir / "backup" / src.name
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                backup_manifest["files"][f] = {
+                    "backup_path": str(dst),
+                    "sha256": _hl.sha256(src.read_bytes()).hexdigest(),
+                }
+
+        # Prepare replacement zen-sessions.jsonlz4
+        zen_sessions_data = {
+            "spaces": state.get("spaces", []),
+            "tabs": state.get("tabs", []),
+            "groups": state.get("groups", []),
+            "folders": state.get("folders", []),
+            "splitViewData": state.get("split_views", []),
+            "lastCollected": _time.time() * 1000,
+        }
+        write_mozlz4(stage_dir / "zen-sessions.jsonlz4", zen_sessions_data)
+
+        # Prepare containers.json if needed
+        if state.get("containers"):
+            containers_file = profile / "containers.json"
+            existing = {}
+            if containers_file.exists():
+                try:
+                    existing = json.loads(containers_file.read_text("utf-8"))
+                except Exception:
+                    existing = {}
+            existing_identities = existing.get("identities", [])
+            synced_ids = {c["userContextId"] for c in state["containers"] if c.get("userContextId")}
+            kept = [i for i in existing_identities if i.get("userContextId") not in synced_ids]
+            existing["identities"] = kept + state["containers"]
+            (stage_dir / "containers.json").write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+        # Write manifest
+        (stage_dir / "manifest.json").write_text(json.dumps({
+            **backup_manifest,
+            "stage_id": stage_id,
+            "profile_path": str(profile),
+            "tabs_count": len(state.get("tabs", [])),
+            "spaces_count": len(state.get("spaces", [])),
+        }, indent=2), encoding="utf-8")
 
         return {
             "ok": True,
-            "backup_dir": str(backup_dir),
-            "tabs_written": len(state.get("tabs", [])),
-            "spaces_written": len(state.get("spaces", [])),
-            "message": "State applied. Restart Zen Browser to see changes. Backup saved to: " + str(backup_dir),
+            "stage_id": stage_id,
+            "profile_path": str(profile),
+            "zen_running": is_zen_running(),
+            "tabs_count": len(state.get("tabs", [])),
+            "spaces_count": len(state.get("spaces", [])),
+            "message": "State staged. Close Zen Browser, then commit.",
         }
+
+    if action == "commit_staged_apply":
+        """Commit staged state — only if Zen is NOT running. Atomic replace."""
+        stage_id = msg.get("stage_id", "")
+        if not stage_id:
+            return {"ok": False, "error": "stage_id is required"}
+        profile = find_zen_profile()
+        if not profile:
+            return {"ok": False, "error": "no Zen profile found"}
+
+        if is_zen_running():
+            return {"ok": False, "error": "Zen Browser is still running. Close it first, then commit."}
+
+        stage_dir = profile / ".zensync_staging" / stage_id
+        if not stage_dir.exists():
+            return {"ok": False, "error": f"stage {stage_id} not found"}
+
+        import shutil
+        import os as _os
+
+        # Atomic replace: write temp then rename
+        staged_zen_sessions = stage_dir / "zen-sessions.jsonlz4"
+        if staged_zen_sessions.exists():
+            target = profile / "zen-sessions.jsonlz4"
+            tmp = target.with_suffix(".jsonlz4.tmp")
+            shutil.copy2(staged_zen_sessions, tmp)
+            _os.replace(str(tmp), str(target))
+
+        staged_containers = stage_dir / "containers.json"
+        if staged_containers.exists():
+            target = profile / "containers.json"
+            tmp = target.with_suffix(".json.tmp")
+            shutil.copy2(staged_containers, tmp)
+            _os.replace(str(tmp), str(target))
+
+        # Clean up staging
+        shutil.rmtree(stage_dir)
+
+        return {
+            "ok": True,
+            "message": "State applied successfully. Open Zen Browser to see synced workspaces.",
+        }
+
+    if action == "abort_staged_apply":
+        """Remove staged state without applying."""
+        stage_id = msg.get("stage_id", "")
+        if not stage_id:
+            return {"ok": False, "error": "stage_id is required"}
+        profile = find_zen_profile()
+        if not profile:
+            return {"ok": False, "error": "no Zen profile found"}
+        stage_dir = profile / ".zensync_staging" / stage_id
+        if stage_dir.exists():
+            import shutil
+            shutil.rmtree(stage_dir)
+            return {"ok": True, "message": "Staged apply aborted."}
+        return {"ok": False, "error": "stage not found"}
+
+    if action == "import_tabs":
+        """Return tab data for live import via browser.tabs.create() in extension.
+        Non-destructive: extension creates tabs, doesn't close existing ones.
+        Does NOT restore workspace assignment (not possible via WebExtension API)."""
+        state = msg.get("state", {})
+        if not state:
+            return {"ok": False, "error": "state is required"}
+        tabs = state.get("tabs", [])
+        if not tabs:
+            return {"ok": False, "error": "no tabs in state"}
+        # Return simplified tab list for extension to create
+        import_tabs_list = []
+        for t in tabs:
+            url = t.get("url", "")
+            # Skip privileged URLs that Firefox won't open via tabs.create
+            if url.startswith(("about:", "chrome:", "resource:", "moz-extension:")):
+                continue
+            import_tabs_list.append({
+                "url": url,
+                "title": t.get("title", ""),
+                "pinned": t.get("pinned", False),
+                "workspace": t.get("zenWorkspace"),
+            })
+        return {"ok": True, "tabs": import_tabs_list, "count": len(import_tabs_list),
+                "skipped": len(tabs) - len(import_tabs_list),
+                "note": "Tabs will open in current workspace. Zen workspace assignment not supported via API."}
 
     return {"ok": False, "error": f"unknown action: {action}"}
 
