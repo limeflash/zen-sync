@@ -260,6 +260,8 @@ cd zen-sync/native-host && python install.py
 
 ## Status
 
+**Alpha — push/pull encrypted snapshot only.** The current build publishes encrypted snapshots of your Zen Browser state and can pull + decrypt remote state. Applying remote state back to your Zen profile (write-back) is not yet implemented. Think of it as encrypted backup + cross-device viewing, not full bidirectional sync yet.
+
 **Alpha.** This project is under active development. The READ path (extract + encrypt + push + pull + decrypt) is fully working and tested end-to-end. The WRITE path (applying remote state back to the local Zen profile) is the next major milestone.
 
 - [x] Research Zen workspace data model

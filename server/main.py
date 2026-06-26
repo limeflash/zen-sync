@@ -41,9 +41,11 @@ SALT_MAX_SIZE = 64
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX_REQUESTS = 60  # per account per window
 
-# Registration gate: if set, /api/register requires this token.
-# Generate with: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+# Registration gate: fail-closed by default.
+# Set ZENSYNC_REG_TOKEN to require it, OR set ZENSYNC_ALLOW_OPEN_REGISTRATION=true
+# to allow open registration (not recommended for production).
 REGISTRATION_TOKEN = os.environ.get("ZENSYNC_REG_TOKEN", "")
+ALLOW_OPEN_REGISTRATION = os.environ.get("ZENSYNC_ALLOW_OPEN_REGISTRATION", "").lower() in ("true", "1", "yes")
 
 # --- app ---
 app = FastAPI(title="Zen Sync Relay", version="0.2.0")
@@ -71,7 +73,10 @@ def check_rate_limit(account_id: str) -> None:
     bucket.append(now)
     # Periodic cleanup of stale buckets (every ~5 min)
     if len(_rate_buckets) > 1000:
-        stale = [k for k, v in _rate_buckets if not v or v[0] < now - RATE_LIMIT_WINDOW * 10]
+        stale = [
+            k for k, v in _rate_buckets.items()
+            if not v or v[0] < now - RATE_LIMIT_WINDOW * 10
+        ]
         for k in stale:
             del _rate_buckets[k]
 
@@ -153,7 +158,7 @@ class RegisterRequest(BaseModel):
     @classmethod
     def validate_salt(cls, v: str) -> str:
         try:
-            decoded = base64.b64decode(v)
+            decoded = base64.b64decode(v, validate=True)
         except Exception:
             raise ValueError("salt must be valid base64")
         if len(decoded) < SALT_MIN_SIZE:
@@ -186,8 +191,11 @@ class PublishBlobRequest(BaseModel):
     @field_validator("nonce")
     @classmethod
     def validate_nonce(cls, v: str) -> str:
+        # encoded nonce should be ~32 chars for 24 bytes
+        if len(v) > 100:
+            raise ValueError("nonce too large")
         try:
-            decoded = base64.b64decode(v)
+            decoded = base64.b64decode(v, validate=True)
         except Exception:
             raise ValueError("nonce must be valid base64")
         if len(decoded) != NONCE_SIZE:
@@ -197,8 +205,12 @@ class PublishBlobRequest(BaseModel):
     @field_validator("ciphertext")
     @classmethod
     def validate_ciphertext_size(cls, v: str) -> str:
+        # max encoded size for MAX_BLOB_SIZE
+        max_encoded = ((MAX_BLOB_SIZE + 2) // 3) * 4 + 100
+        if len(v) > max_encoded:
+            raise ValueError(f"ciphertext exceeds {MAX_BLOB_SIZE} bytes")
         try:
-            decoded = base64.b64decode(v)
+            decoded = base64.b64decode(v, validate=True)
         except Exception:
             raise ValueError("ciphertext must be valid base64")
         if len(decoded) > MAX_BLOB_SIZE:
@@ -281,6 +293,10 @@ def health():
 
 @app.post("/api/register", response_model=RegisterResponse)
 def register(req: RegisterRequest, request: Request):
+    # Fail-closed: if no token configured and open registration not explicitly
+    # enabled, reject all registrations.
+    if not REGISTRATION_TOKEN and not ALLOW_OPEN_REGISTRATION:
+        raise HTTPException(403, "registration closed (set ZENSYNC_REG_TOKEN or ZENSYNC_ALLOW_OPEN_REGISTRATION=true)")
     # Gate: if registration token is configured, require it
     if REGISTRATION_TOKEN:
         if not req.token or not _const_time_eq(req.token, REGISTRATION_TOKEN):

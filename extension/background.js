@@ -55,8 +55,7 @@ async function getRelayUrl() {
 async function relayRequest(path, method = "GET", body = null, headers = {}) {
   const RELAY_TIMEOUT_MS = 15000;
   const relayUrl = await getRelayUrl();
-  const stored = await browser.storage.local.get("authToken");
-  const authToken = stored.authToken || "";
+  const authToken = await getAuthToken();
   const allHeaders = { "Content-Type": "application/json", ...headers };
   if (authToken) allHeaders["X-Auth-Token"] = authToken;
   const controller = new AbortController();
@@ -96,9 +95,20 @@ async function getStoredState() {
     "deviceId",
     "deviceName",
     "salt",
-    "authToken",
     "lastSyncTimestamp",
   ]);
+}
+
+async function getAuthToken() {
+  // Get auth token from native host keyring — never stored in browser.storage.local
+  const stored = await browser.storage.local.get("accountId");
+  if (!stored.accountId) return "";
+  try {
+    const resp = await sendToNative({ action: "get_auth_token", accountId: stored.accountId });
+    return resp.ok ? (resp.auth_token || "") : "";
+  } catch {
+    return "";
+  }
 }
 
 async function performSyncPush() {
@@ -289,7 +299,6 @@ async function setupAccount(passphrase, deviceName, token, relayUrl) {
     deviceId: deviceResp.device_id,
     deviceName: deviceName,
     salt: saltB64,
-    authToken: authToken,
     lastSyncTimestamp: 0,
   });
   console.log("[zensync] setup: complete");
@@ -346,7 +355,6 @@ async function joinAccount(accountId, passphrase, saltB64, deviceName, relayUrl)
     deviceId: deviceResp.device_id,
     deviceName: deviceName,
     salt: saltB64,
-    authToken: authToken,
     lastSyncTimestamp: 0,
   });
 

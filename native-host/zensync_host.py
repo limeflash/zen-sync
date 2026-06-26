@@ -135,29 +135,39 @@ def find_zen_profile() -> Path | None:
 # --- mozlz4 decompression ---
 
 
-def read_mozlz4(path: Path) -> Any:
+def read_mozlz4(path: Path, fail_closed: bool = False) -> Any:
     """Read and decompress a Mozilla .jsonlz4 file, returning parsed JSON.
 
+    Args:
+        path: file to read
+        fail_closed: if True (for primary session store), raise on corruption
+                     instead of returning {} — prevents publishing empty state
+
     Guards against decompression bombs by capping uncompressed size.
-    Returns {} on corruption instead of crashing — sync continues with empty state.
     """
     import lz4.block
     import struct
 
-    MAX_UNCOMPRESSED_SIZE = 64 * 1024 * 1024  # 64 MB — session stores are typically < 1 MB
+    MAX_UNCOMPRESSED_SIZE = 64 * 1024 * 1024  # 64 MB
 
     try:
         data = path.read_bytes()
         magic = data[:8]
         if magic != b"mozLz40\x00":
+            if fail_closed:
+                raise ValueError("session file has invalid magic — refusing to publish empty state")
             return {}
         uncompressed_size = struct.unpack("<I", data[8:12])[0]
         if uncompressed_size > MAX_UNCOMPRESSED_SIZE:
+            if fail_closed:
+                raise ValueError("session file exceeds size limit — refusing to publish")
             return {}
         decompressed = lz4.block.decompress(data[12:], uncompressed_size=uncompressed_size)
         return json.loads(decompressed.decode("utf-8"))
-    except Exception:
-        # Corrupted/truncated session file — return empty state, don't crash sync
+    except Exception as e:
+        if fail_closed:
+            raise
+        # Non-critical files (recovery backup, live folders) — return empty
         return {}
 
 
@@ -171,10 +181,11 @@ def extract_state(profile_path: Path) -> dict[str, Any]:
     split_views, active_space, timestamp, source_device.
     """
     # Primary source: zen-sessions.jsonlz4 (Zen-specific session store)
+    # fail_closed=True: if this is corrupt, refuse to publish (don't overwrite with empty)
     zen_sessions = profile_path / "zen-sessions.jsonlz4"
     session_data: dict[str, Any] = {}
     if zen_sessions.exists():
-        session_data = read_mozlz4(zen_sessions)
+        session_data = read_mozlz4(zen_sessions, fail_closed=True)
 
     # Firefox session store (for activeZenSpace + window-level data)
     active_space = None
@@ -206,7 +217,15 @@ def extract_state(profile_path: Path) -> dict[str, Any]:
     tabs = []
     for t in raw_tabs:
         entries = t.get("entries", [])
-        current_entry = entries[-1] if entries else {}
+        # Use the session's 'index' field to select the current entry
+        # Firefox/Zen stores 1-based index of current history entry
+        idx = t.get("index", len(entries))
+        if idx and 1 <= idx <= len(entries):
+            current_entry = entries[idx - 1]
+        elif entries:
+            current_entry = entries[-1]
+        else:
+            current_entry = {}
         tabs.append(
             {
                 "zenSyncId": t.get("zenSyncId"),
