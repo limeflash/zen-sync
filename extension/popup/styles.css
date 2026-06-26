@@ -82,12 +82,12 @@ body {
 .header-logo {
   width: 30px; height: 30px;
   border-radius: 8px;
-  background: hsl(var(--accent));
   display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
   flex-shrink: 0;
   box-shadow: 0 2px 8px hsl(var(--accent) / 30%);
 }
-.header-logo svg { width: 17px; height: 17px; }
+.header-logo img { width: 24px; height: 24px; display: block; border-radius: 4px; }
 .header-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
 .header-sub { font-size: 11px; color: hsl(var(--muted-foreground)); margin-top: 2px; }
 
