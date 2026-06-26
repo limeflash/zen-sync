@@ -271,10 +271,9 @@ cd zen-sync/native-host && python install.py
 
 **Not yet implemented:**
 - Automatic conflict resolution (merge instead of overwrite)
-- Device revocation and credential rotation
+- Extension UI for device revocation (server API exists)
+- Credential rotation
 - Signed XPI for permanent install (currently loads as Temporary Add-on)
-
-**Alpha.** This project is under active development. The READ path (extract + encrypt + push + pull + decrypt) is fully working and tested end-to-end. The WRITE path (applying remote state back to the local Zen profile) is the next major milestone.
 
 - [x] Research Zen workspace data model
 - [x] Server relay (FastAPI + Caddy + TLS)

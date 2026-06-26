@@ -164,14 +164,17 @@ async function performSyncPull() {
   }
 
   let since = stored.lastSyncTimestamp || 0;
+  let sinceId = stored.lastSyncBlobId || "";
   const remoteStates = [];
   let totalPulled = 0;
   const MAX_PAGES = 20; // safety budget — don't loop forever
 
-  // 1. Pull blobs with pagination loop
+  // 1. Pull blobs with pagination loop (composite cursor: timestamp + blob_id)
   for (let page = 0; page < MAX_PAGES; page++) {
+    let url = `/api/blobs?since=${since}`;
+    if (sinceId) url += `&since_id=${sinceId}`;
     const resp = await relayRequest(
-      `/api/blobs?since=${since}`,
+      url,
       "GET",
       null,
       {
@@ -207,18 +210,16 @@ async function performSyncPull() {
 
     // Check for more pages
     if (headers["X-Has-More"] !== "true") {
-      // Advance cursor to last blob timestamp
-      if (blobs.length > 0) {
-        since = blobs[blobs.length - 1].timestamp;
-      }
       break;
     }
 
-    // Advance cursor for next page
+    // Advance composite cursor
     if (headers["X-Next-Cursor"]) {
       since = parseFloat(headers["X-Next-Cursor"]);
+      sinceId = headers["X-Next-Cursor-Id"] || "";
     } else if (blobs.length > 0) {
       since = blobs[blobs.length - 1].timestamp;
+      sinceId = blobs[blobs.length - 1].blob_id;
     }
   }
 
@@ -237,8 +238,11 @@ async function performSyncPull() {
     });
   }
 
-  // 4. Update last sync timestamp
-  await browser.storage.local.set({ lastSyncTimestamp: since });
+  // 4. Update last sync cursor (composite: timestamp + blob_id)
+  await browser.storage.local.set({
+    lastSyncTimestamp: since,
+    lastSyncBlobId: sinceId,
+  });
 
   return { ok: true, pulled: totalPulled };
 }
@@ -403,20 +407,6 @@ browser.alarms.onAlarm.addListener((alarm) => {
 });
 
 // --- apply remote state ---
-
-async function applyRemoteState() {
-  // Legacy direct apply (unsafe if Zen running)
-  const stored = await browser.storage.local.get(["lastRemoteState", "lastRemoteDevice", "lastRemoteTime"]);
-  if (!stored.lastRemoteState) {
-    return { ok: false, error: "no remote state available — sync first" };
-  }
-  try {
-    const resp = await sendToNative({ action: "apply_state", state: stored.lastRemoteState });
-    return resp;
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-}
 
 async function stageAndApply() {
   // Safe apply: stage → check Zen → commit (or instruct user to close)

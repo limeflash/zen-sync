@@ -345,7 +345,6 @@ function refreshQR() {
       $("pair-not-configured").textContent = "Set up an account first to generate a QR code.";
       $("pair-not-configured").style.display = "block";
       $("pair-qr-canvas").style.display = "none";
-      $("pair-countdown").style.display = "none";
       return;
     }
 
@@ -361,8 +360,6 @@ function refreshQR() {
       const canvas = $("pair-qr-canvas");
       canvas.style.display = "block";
       drawQR(canvas, data);
-      // No countdown — QR is a static export of account metadata
-      $("pair-countdown").style.display = "none";
     } catch (e) {
       $("pair-not-configured").textContent = "⚠ " + e.message;
       $("pair-not-configured").style.display = "block";

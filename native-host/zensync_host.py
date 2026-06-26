@@ -525,19 +525,22 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
         }
 
     if action == "get_auth_token":
-        """Get stored auth token from keyring (derived at setup time)."""
+        """Get stored auth token from keyring (derived at setup time).
+
+        Distinguishes 'not found' from 'keyring unavailable'."""
         account_id = msg.get("accountId", "")
         if not account_id:
             return {"ok": False, "error": "accountId is required"}
-        # auth token is stored alongside enc key in keyring
         try:
             import keyring
             auth_hex = keyring.get_password("zensync_auth", account_id)
             if auth_hex:
                 return {"ok": True, "auth_token": auth_hex}
-        except Exception:
-            pass
-        return {"ok": False, "error": "auth token not found in keyring"}
+            return {"ok": False, "error": "auth token not found — run setup first"}
+        except ImportError:
+            return {"ok": False, "error": "keyring library not installed"}
+        except Exception as e:
+            return {"ok": False, "error": f"keyring access failed: {type(e).__name__} — is the keyring unlocked?"}
 
     if action == "store_auth_token":
         """Store auth token in keyring separately from enc key."""

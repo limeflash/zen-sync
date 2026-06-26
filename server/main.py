@@ -462,6 +462,7 @@ def pull_blobs(
     x_device_id: str = Header(..., alias="X-Device-Id"),
     x_auth_token: Optional[str] = Header(None),
     since: float = 0.0,
+    since_id: str = "",
     limit: int = MAX_PULL_RESULTS,
 ):
     account_id, device_id = require_device(x_account_id, x_device_id, x_auth_token)
@@ -471,15 +472,27 @@ def pull_blobs(
     limit = max(1, min(limit, MAX_PULL_RESULTS))
 
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT b.*, d.name as device_name FROM blobs b "
-            "JOIN devices d ON b.device_id = d.id "
-            "WHERE b.account_id = ? AND b.device_id != ? "
-            "AND b.timestamp > ? "
-            "ORDER BY b.timestamp ASC "
-            "LIMIT ?",
-            (account_id, device_id, since, limit + 1),
-        ).fetchall()
+        if since_id:
+            # Composite cursor: (timestamp, blob_id) tie-breaker
+            rows = conn.execute(
+                "SELECT b.*, d.name as device_name FROM blobs b "
+                "JOIN devices d ON b.device_id = d.id "
+                "WHERE b.account_id = ? AND b.device_id != ? "
+                "AND ((b.timestamp > ?) OR (b.timestamp = ? AND b.id > ?)) "
+                "ORDER BY b.timestamp ASC, b.id ASC "
+                "LIMIT ?",
+                (account_id, device_id, since, since, since_id, limit + 1),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT b.*, d.name as device_name FROM blobs b "
+                "JOIN devices d ON b.device_id = d.id "
+                "WHERE b.account_id = ? AND b.device_id != ? "
+                "AND b.timestamp > ? "
+                "ORDER BY b.timestamp ASC, b.id ASC "
+                "LIMIT ?",
+                (account_id, device_id, since, limit + 1),
+            ).fetchall()
 
     has_more = len(rows) > limit
     rows = rows[:limit]
@@ -499,7 +512,8 @@ def pull_blobs(
     ]
 
     response.headers["X-Has-More"] = "true" if has_more else "false"
-    # Next cursor: timestamp of last blob in this page
+    # Composite cursor: timestamp + blob_id for tie-breaking
     if result:
         response.headers["X-Next-Cursor"] = str(result[-1].timestamp)
+        response.headers["X-Next-Cursor-Id"] = result[-1].blob_id
     return result

@@ -16,13 +16,15 @@ jobs:
           python-version: "3.12"
       - name: Compile check
         run: python -m py_compile server/main.py native-host/zensync_host.py native-host/install.py
-      - name: Install server deps
-        run: pip install -r server/requirements.txt
+      - name: Install all dependencies
+        run: |
+          pip install -r server/requirements.txt
+          pip install -r native-host/requirements.txt
       - name: Install audit tools
         run: pip install bandit pip-audit
-      - name: Bandit
-        run: bandit -r server native-host -q || true
-      - name: pip-audit
+      - name: Bandit (medium+ severity only)
+        run: bandit -r server native-host -q -ll
+      - name: pip-audit (server + native deps)
         run: pip-audit
 
   extension:
