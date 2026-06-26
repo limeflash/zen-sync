@@ -30,7 +30,7 @@ That's it for the native host. Now load the extension:
 4. Enter a **Passphrase** (8+ characters — remember it, it cannot be recovered)
 5. Click **Create Account**
 
-Your workspaces are now syncing.
+Your workspaces are now syncing. Use **Sync Now** to push/pull, then **Safe Apply** to write remote state to your Zen profile (requires closing Zen), or **Import Tabs** to open remote URLs immediately.
 
 ## Join (second device)
 

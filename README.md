@@ -263,7 +263,16 @@ cd zen-sync/native-host && python install.py
 
 ## Status
 
-**Alpha — push/pull encrypted snapshot only.** The current build publishes encrypted snapshots of your Zen Browser state and can pull + decrypt remote state. Applying remote state back to your Zen profile (write-back) is not yet implemented. Think of it as encrypted backup + cross-device viewing, not full bidirectional sync yet.
+**Alpha — push, pull, and apply all work.** The current build can:
+- Extract and publish encrypted snapshots of your Zen Browser state
+- Pull and decrypt remote state from other devices
+- **Safe Apply** (full fidelity): stages remote state, backs up your profile, requires closing Zen, then atomically writes session files. Restart Zen to see synced workspaces, tabs, groups, folders, and containers.
+- **Import Tabs** (live, no restart): opens remote URLs as new tabs in the current workspace. Workspace assignment not restored (Zen doesn't expose this via WebExtension API).
+
+**Not yet implemented:**
+- Automatic conflict resolution (merge instead of overwrite)
+- Device revocation and credential rotation
+- Signed XPI for permanent install (currently loads as Temporary Add-on)
 
 **Alpha.** This project is under active development. The READ path (extract + encrypt + push + pull + decrypt) is fully working and tested end-to-end. The WRITE path (applying remote state back to the local Zen profile) is the next major milestone.
 
@@ -271,12 +280,14 @@ cd zen-sync/native-host && python install.py
 - [x] Server relay (FastAPI + Caddy + TLS)
 - [x] Native host (profile reader + E2E crypto)
 - [x] Extension (UI + sync coordination + QR pairing)
-- [x] Security audit (10 critical + 8 medium fixes applied)
+- [x] Security audit (3 rounds, all P0/P1 fixes applied)
 - [x] E2E test (register → push → pull → decrypt — verified)
-- [ ] WRITE path (apply remote state to local profile)
+- [x] WRITE path — Safe Apply (stage + backup + commit on close)
+- [x] WRITE path — Import Tabs (live, no restart)
+- [ ] Automatic conflict resolution (merge instead of LWW)
 - [ ] macOS testing
 - [ ] Package as signed XPI for permanent install
-- [ ] Conflict resolution (merge instead of LWW)
+- [ ] Device revocation and credential rotation
 
 <div align="center">
 

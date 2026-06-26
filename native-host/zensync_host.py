@@ -186,6 +186,25 @@ def write_mozlz4(path: Path, data: dict[str, Any]) -> None:
     path.write_bytes(header + compressed)
 
 
+def _validate_stage_id(stage_id: str, profile: Path) -> Path | None:
+    """Validate stage_id is safe (UUID format) and resolve within staging root.
+
+    Returns the resolved stage_dir Path, or None if invalid (traversal attempt).
+    """
+    import re
+    # Strict allowlist: stage_<uuid> or stage_<hex> format only
+    if not re.match(r"^stage_[a-f0-9-]{8,64}$", stage_id):
+        return None
+    staging_root = (profile / ".zensync_staging").resolve()
+    stage_dir = (staging_root / stage_id).resolve()
+    # Ensure stage_dir is inside staging_root (no traversal)
+    try:
+        stage_dir.relative_to(staging_root)
+    except ValueError:
+        return None
+    return stage_dir
+
+
 def is_zen_running() -> bool:
     """Detect if Zen Browser is currently running."""
     import subprocess
@@ -431,24 +450,32 @@ def store_key(account_id: str, passphrase: str, salt: bytes) -> bool:
 
 
 def get_key(account_id: str) -> bytes | None:
-    """Retrieve derived key from OS keyring."""
+    """Retrieve derived key from OS keyring.
+
+    Returns None if key not found. Raises RuntimeError if keyring is unavailable.
+    """
     try:
         import keyring
         hex_key = keyring.get_password("zensync", account_id)
         if hex_key:
             return bytes.fromhex(hex_key)
-    except Exception:
-        pass
-    return None
+        return None  # Key not found — legitimate, not an error
+    except ImportError:
+        raise RuntimeError("keyring library not installed")
+    except Exception as e:
+        # Keyring backend error (locked, D-Bus unavailable, etc.)
+        raise RuntimeError(f"keyring access failed: {type(e).__name__}")
 
 
 def delete_key(account_id: str) -> bool:
-    """Remove key from keyring."""
+    """Remove key from keyring. No error if key doesn't exist."""
     try:
         import keyring
         keyring.delete_password("zensync", account_id)
-    except Exception:
+    except ImportError:
         pass
+    except Exception:
+        pass  # Key may not exist — that's fine for delete
     return True
 
 
@@ -592,53 +619,6 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
         delete_key(account_id)
         return {"ok": True}
 
-    if action == "apply_state":
-        """Legacy direct apply — kept for backward compat but not recommended.
-        Use stage_apply + commit_staged_apply for safe flow."""
-        state = msg.get("state", {})
-        if not state:
-            return {"ok": False, "error": "state is required"}
-        required_keys = {"spaces", "tabs", "groups", "folders"}
-        missing = required_keys - set(state.keys())
-        if missing:
-            return {"ok": False, "error": f"state missing keys: {missing}"}
-        if len(state.get("tabs", [])) == 0 and len(state.get("spaces", [])) == 0:
-            return {"ok": False, "error": "refusing to apply empty state (no tabs, no spaces)"}
-        profile = find_zen_profile()
-        if not profile:
-            return {"ok": False, "error": "no Zen profile found"}
-        import time as _time
-        import shutil
-        backup_dir = profile / f".zensync_backup_{int(_time.time())}"
-        backup_dir.mkdir(exist_ok=True)
-        for f in ["zen-sessions.jsonlz4", "sessionstore.jsonlz4", "sessionstore-backups/recovery.jsonlz4", "containers.json"]:
-            src = profile / f
-            if src.exists():
-                shutil.copy2(src, backup_dir / src.name)
-        zen_sessions_data = {
-            "spaces": state.get("spaces", []),
-            "tabs": state.get("tabs", []),
-            "groups": state.get("groups", []),
-            "folders": state.get("folders", []),
-            "splitViewData": state.get("split_views", []),
-            "lastCollected": _time.time() * 1000,
-        }
-        write_mozlz4(profile / "zen-sessions.jsonlz4", zen_sessions_data)
-        if state.get("containers"):
-            containers_file = profile / "containers.json"
-            existing = {}
-            if containers_file.exists():
-                try:
-                    existing = json.loads(containers_file.read_text("utf-8"))
-                except Exception:
-                    existing = {}
-            existing_identities = existing.get("identities", [])
-            synced_ids = {c["userContextId"] for c in state["containers"] if c.get("userContextId")}
-            kept = [i for i in existing_identities if i.get("userContextId") not in synced_ids]
-            existing["identities"] = kept + state["containers"]
-            containers_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-        return {"ok": True, "backup_dir": str(backup_dir), "tabs_written": len(state.get("tabs", [])), "spaces_written": len(state.get("spaces", [])), "message": "State applied. Restart Zen Browser to see changes. Backup saved to: " + str(backup_dir)}
-
     if action == "is_zen_running":
         return {"ok": True, "running": is_zen_running()}
 
@@ -661,7 +641,8 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
         import time as _time
         import shutil
         import hashlib as _hl
-        stage_id = f"stage_{int(_time.time())}"
+        import uuid as _uuid
+        stage_id = f"stage_{_uuid.uuid4().hex}"
         stage_dir = profile / ".zensync_staging" / stage_id
         stage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -724,7 +705,11 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
         }
 
     if action == "commit_staged_apply":
-        """Commit staged state — only if Zen is NOT running. Atomic replace."""
+        """Commit staged state — only if Zen is NOT running. Atomic replace.
+
+        Safety: validates stage_id (no traversal), takes fresh backup at commit
+        time, and checks that source files haven't changed since staging.
+        """
         stage_id = msg.get("stage_id", "")
         if not stage_id:
             return {"ok": False, "error": "stage_id is required"}
@@ -732,15 +717,48 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
         if not profile:
             return {"ok": False, "error": "no Zen profile found"}
 
+        # Validate stage_id (prevents path traversal)
+        stage_dir = _validate_stage_id(stage_id, profile)
+        if stage_dir is None or not stage_dir.exists():
+            return {"ok": False, "error": "invalid or not found stage_id"}
+
         if is_zen_running():
             return {"ok": False, "error": "Zen Browser is still running. Close it first, then commit."}
 
-        stage_dir = profile / ".zensync_staging" / stage_id
-        if not stage_dir.exists():
-            return {"ok": False, "error": f"stage {stage_id} not found"}
+        # Read manifest for hash comparison
+        manifest_path = stage_dir / "manifest.json"
+        if not manifest_path.exists():
+            return {"ok": False, "error": "stage manifest not found"}
+        manifest = json.loads(manifest_path.read_text("utf-8"))
 
+        # Check if source files changed since staging (detect post-stage browsing)
+        import hashlib as _hl
         import shutil
         import os as _os
+        import time as _time
+
+        changed_files = []
+        for f, info in manifest.get("files", {}).items():
+            src = profile / f
+            if src.exists():
+                current_hash = _hl.sha256(src.read_bytes()).hexdigest()
+                if current_hash != info.get("sha256"):
+                    changed_files.append(f)
+
+        if changed_files:
+            return {
+                "ok": False,
+                "error": f"Local profile changed since staging ({', '.join(changed_files)}). "
+                         f"Please re-stage the apply to avoid losing local changes.",
+            }
+
+        # Take fresh backup at commit time (in case Zen wrote on close)
+        fresh_backup_dir = profile / f".zensync_backup_{int(_time.time())}"
+        fresh_backup_dir.mkdir(exist_ok=True)
+        for f in ["zen-sessions.jsonlz4", "sessionstore.jsonlz4", "containers.json"]:
+            src = profile / f
+            if src.exists():
+                shutil.copy2(src, fresh_backup_dir / src.name)
 
         # Atomic replace: write temp then rename
         staged_zen_sessions = stage_dir / "zen-sessions.jsonlz4"
@@ -762,7 +780,9 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
 
         return {
             "ok": True,
-            "message": "State applied successfully. Open Zen Browser to see synced workspaces.",
+            "backup_dir": str(fresh_backup_dir),
+            "message": "State applied successfully. Open Zen Browser to see synced workspaces. "
+                       f"Fresh backup: {fresh_backup_dir}",
         }
 
     if action == "abort_staged_apply":
@@ -773,12 +793,13 @@ def handle_message(msg: dict[str, Any]) -> dict[str, Any]:
         profile = find_zen_profile()
         if not profile:
             return {"ok": False, "error": "no Zen profile found"}
-        stage_dir = profile / ".zensync_staging" / stage_id
-        if stage_dir.exists():
-            import shutil
-            shutil.rmtree(stage_dir)
-            return {"ok": True, "message": "Staged apply aborted."}
-        return {"ok": False, "error": "stage not found"}
+        # Validate stage_id (prevents path traversal)
+        stage_dir = _validate_stage_id(stage_id, profile)
+        if stage_dir is None or not stage_dir.exists():
+            return {"ok": False, "error": "invalid or not found stage_id"}
+        import shutil
+        shutil.rmtree(stage_dir)
+        return {"ok": True, "message": "Staged apply aborted."}
 
     if action == "import_tabs":
         """Return tab data for live import via browser.tabs.create() in extension.
