@@ -327,42 +327,12 @@ $("btn-join").addEventListener("click", async () => {
   }
 });
 
-// --- QR pairing (real QR via qrcode-generator library) ---
+// --- QR pairing (account export via QR) ---
+// QR contains account ID + salt + relay URL for easy sharing to device 2.
+// No expiry/token — this is a convenience export, not a security boundary.
+// The passphrase is NOT included — device 2 must enter it separately.
 
-const PAIR_TTL_SEC = 60; // QR valid for 60 seconds, then auto-regenerates
-let _pairToken = null;
-let _pairExpiry = 0;
-let _pairTimer = null;
-
-function uuid() {
-  return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c =>
-    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
-  );
-}
-
-function generatePairingToken() {
-  _pairToken = uuid();
-  _pairExpiry = Date.now() + PAIR_TTL_SEC * 1000;
-}
-
-function startPairCountdown() {
-  clearInterval(_pairTimer);
-  _pairTimer = setInterval(() => {
-    const remaining = Math.max(0, Math.ceil((_pairExpiry - Date.now()) / 1000));
-    const el = $("pair-countdown");
-    if (el) {
-      el.textContent = remaining > 0 ? `${remaining}s` : "Expired";
-      el.className = "pair-timer" + (remaining <= 10 ? " urgent" : "");
-    }
-    if (remaining <= 0) {
-      clearInterval(_pairTimer);
-      refreshQR(true); // force new token
-    }
-  }, 1000);
-}
-
-function refreshQR(forceNewToken = false) {
-  // Check if qrcode library loaded
+function refreshQR() {
   if (typeof qrcode === "undefined") {
     $("pair-not-configured").innerHTML = "⚠ QR library failed to load.";
     $("pair-not-configured").style.display = "block";
@@ -379,30 +349,20 @@ function refreshQR(forceNewToken = false) {
       return;
     }
 
-    // Generate new token if forced, or if expired, or if none exists
-    const now = Date.now();
-    if (forceNewToken || !_pairToken || now >= _pairExpiry) {
-      generatePairingToken();
-    }
-
     $("pair-not-configured").style.display = "none";
 
     const data = JSON.stringify({
       a: stored.accountId,
       s: stored.salt,
       r: stored.relayUrl || "your-relay-url",
-      t: _pairToken,
-      e: _pairExpiry,
     });
 
     try {
       const canvas = $("pair-qr-canvas");
       canvas.style.display = "block";
       drawQR(canvas, data);
-
-      // Show countdown
-      $("pair-countdown").style.display = "inline-block";
-      startPairCountdown();
+      // No countdown — QR is a static export of account metadata
+      $("pair-countdown").style.display = "none";
     } catch (e) {
       $("pair-not-configured").textContent = "⚠ " + e.message;
       $("pair-not-configured").style.display = "block";
@@ -454,7 +414,7 @@ function drawQR(canvas, data) {
 }
 
 $("btn-regen-qr").addEventListener("click", () => {
-  refreshQR(true); // force new token
+  refreshQR();
 });
 
 // --- init ---

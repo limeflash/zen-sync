@@ -202,17 +202,13 @@
     <!-- PAIR (QR) -->
     <section class="view" id="view-pair">
       <div class="hint">
-        <strong>QR pairing.</strong> Show this code on device 1, scan with device 2 to instantly share account details.
+        <strong>Account QR.</strong> Scan with device 2 to instantly share Account ID, Salt, and Relay URL. Passphrase is not included — enter it separately on device 2.
       </div>
       <div id="pair-qr-container" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;background:hsl(var(--muted));border:1px solid hsl(var(--border));border-radius:var(--radius)">
         <canvas id="pair-qr-canvas" style="display:none;border-radius:8px"></canvas>
         <div id="pair-not-configured" style="padding:40px 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center">
           Set up an account first to generate a QR code.
         </div>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px">
-        <span style="color:hsl(var(--muted-foreground))">Expires in</span>
-        <span id="pair-countdown" class="pair-timer" style="display:none">60s</span>
       </div>
       <button class="btn" id="btn-regen-qr">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

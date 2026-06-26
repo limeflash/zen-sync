@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile check
+        run: python -m py_compile server/main.py native-host/zensync_host.py native-host/install.py
+      - name: Install server deps
+        run: pip install -r server/requirements.txt
+      - name: Install audit tools
+        run: pip install bandit pip-audit
+      - name: Bandit
+        run: bandit -r server native-host -q || true
+      - name: pip-audit
+        run: pip-audit
+
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax check
+        run: |
+          node --check extension/background.js
+          node --check extension/popup/popup.js
+      - name: web-ext lint
+        run: npx --yes web-ext lint --source-dir extension
+      - name: retire
+        run: npx --yes retire --path extension

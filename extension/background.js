@@ -73,7 +73,13 @@ async function relayRequest(path, method = "GET", body = null, headers = {}) {
       throw new Error(`relay ${method} ${path}: ${res.status} ${text.substring(0, 200)}`);
     }
     try {
-      return await res.json();
+      const data = await res.json();
+      // Attach response headers for pagination support
+      data._responseHeaders = {
+        "X-Has-More": res.headers.get("X-Has-More"),
+        "X-Next-Cursor": res.headers.get("X-Next-Cursor"),
+      };
+      return data;
     } catch {
       throw new Error(`relay ${method} ${path}: invalid JSON response`);
     }
@@ -157,43 +163,70 @@ async function performSyncPull() {
     return { ok: false, error: "not configured" };
   }
 
-  const since = stored.lastSyncTimestamp || 0;
+  let since = stored.lastSyncTimestamp || 0;
+  const remoteStates = [];
+  let totalPulled = 0;
+  const MAX_PAGES = 20; // safety budget — don't loop forever
 
-  // 1. Pull blobs from other devices
-  const blobs = await relayRequest(
-    `/api/blobs?since=${since}`,
-    "GET",
-    null,
-    {
-      "X-Account-Id": stored.accountId,
-      "X-Device-Id": stored.deviceId,
+  // 1. Pull blobs with pagination loop
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const resp = await relayRequest(
+      `/api/blobs?since=${since}`,
+      "GET",
+      null,
+      {
+        "X-Account-Id": stored.accountId,
+        "X-Device-Id": stored.deviceId,
+      }
+    );
+
+    const blobs = resp.filter(b => !b._responseHeaders);
+    const headers = resp._responseHeaders || {};
+
+    if (!blobs || blobs.length === 0) {
+      break;
     }
-  );
 
-  if (!blobs || blobs.length === 0) {
+    // 2. Decrypt each blob (uses stored key from OS keyring)
+    for (const blob of blobs) {
+      const decryptResp = await sendToNative({
+        action: "decrypt",
+        accountId: stored.accountId,
+        ciphertext: blob.ciphertext,
+        nonce: blob.nonce,
+      });
+      if (decryptResp.ok) {
+        remoteStates.push({
+          deviceName: blob.device_name,
+          timestamp: blob.timestamp,
+          state: decryptResp.data,
+        });
+      }
+      totalPulled++;
+    }
+
+    // Check for more pages
+    if (headers["X-Has-More"] !== "true") {
+      // Advance cursor to last blob timestamp
+      if (blobs.length > 0) {
+        since = blobs[blobs.length - 1].timestamp;
+      }
+      break;
+    }
+
+    // Advance cursor for next page
+    if (headers["X-Next-Cursor"]) {
+      since = parseFloat(headers["X-Next-Cursor"]);
+    } else if (blobs.length > 0) {
+      since = blobs[blobs.length - 1].timestamp;
+    }
+  }
+
+  if (totalPulled === 0) {
     return { ok: true, pulled: 0 };
   }
 
-  // 2. Decrypt each blob (uses stored key from OS keyring)
-  const remoteStates = [];
-  for (const blob of blobs) {
-    const decryptResp = await sendToNative({
-      action: "decrypt",
-      accountId: stored.accountId,
-      ciphertext: blob.ciphertext,
-      nonce: blob.nonce,
-    });
-    if (decryptResp.ok) {
-      remoteStates.push({
-        deviceName: blob.device_name,
-        timestamp: blob.timestamp,
-        state: decryptResp.data,
-      });
-    }
-  }
-
-  // 3. Apply latest state (phase 2: write back to profile)
-  // For now, store the latest remote state for UI display
+  // 3. Store the latest remote state for UI display + apply
   if (remoteStates.length > 0) {
     remoteStates.sort((a, b) => b.timestamp - a.timestamp);
     const latest = remoteStates[0];
@@ -205,10 +238,9 @@ async function performSyncPull() {
   }
 
   // 4. Update last sync timestamp
-  const latestTimestamp = blobs[blobs.length - 1].timestamp;
-  await browser.storage.local.set({ lastSyncTimestamp: latestTimestamp });
+  await browser.storage.local.set({ lastSyncTimestamp: since });
 
-  return { ok: true, pulled: remoteStates.length };
+  return { ok: true, pulled: totalPulled };
 }
 
 async function performSync() {

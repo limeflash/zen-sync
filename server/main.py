@@ -33,6 +33,7 @@ DATA_DIR = Path(os.environ.get("ZENSYNC_DATA_DIR", "/opt/zensync/data"))
 DB_PATH = DATA_DIR / "zensync.db"
 MAX_BLOB_SIZE = 16 * 1024 * 1024  # 16 MB max per blob (ciphertext)
 MAX_BLOBS_PER_ACCOUNT = 10_000
+MAX_BYTES_PER_ACCOUNT = 512 * 1024 * 1024  # 512 MB total per account
 MAX_DEVICES_PER_ACCOUNT = 20
 MAX_PULL_RESULTS = 500
 NONCE_SIZE = 24  # XChaCha20-Poly1305 IETF nonce
@@ -368,6 +369,28 @@ def list_devices(
     ]
 
 
+@app.delete("/api/devices/{device_id}")
+def delete_device(
+    device_id: str,
+    x_account_id: str = Header(..., alias="X-Account-Id"),
+    x_auth_token: Optional[str] = Header(None),
+):
+    """Revoke a device from the account. Deletes the device and its blobs."""
+    account_id = require_account(x_account_id, x_auth_token)
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM devices WHERE id = ? AND account_id = ?",
+            (device_id, account_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "device not found")
+        # Delete device's blobs
+        conn.execute("DELETE FROM blobs WHERE device_id = ?", (device_id,))
+        # Delete device
+        conn.execute("DELETE FROM devices WHERE id = ?", (device_id,))
+    return {"ok": True, "message": "device revoked"}
+
+
 @app.post("/api/blobs")
 def publish_blob(
     req: PublishBlobRequest,
@@ -383,6 +406,7 @@ def publish_blob(
     nonce_bytes = base64.b64decode(req.nonce)
 
     with get_db() as conn:
+        # Check count quota
         count = conn.execute(
             "SELECT COUNT(*) FROM blobs WHERE account_id = ?", (account_id,)
         ).fetchone()[0]
@@ -394,6 +418,22 @@ def publish_blob(
                 ")",
                 (account_id,),
             )
+
+        # Check byte quota — delete oldest until under limit
+        total_bytes = conn.execute(
+            "SELECT COALESCE(SUM(size), 0) FROM blobs WHERE account_id = ?", (account_id,)
+        ).fetchone()[0]
+        total_bytes += len(ciphertext_bytes)
+        while total_bytes > MAX_BYTES_PER_ACCOUNT:
+            oldest = conn.execute(
+                "SELECT id, size FROM blobs WHERE account_id = ? "
+                "ORDER BY timestamp ASC LIMIT 1",
+                (account_id,),
+            ).fetchone()
+            if not oldest:
+                break
+            conn.execute("DELETE FROM blobs WHERE id = ?", (oldest["id"],))
+            total_bytes -= oldest["size"]
 
         conn.execute(
             "INSERT INTO blobs (id, account_id, device_id, version, "
@@ -459,4 +499,7 @@ def pull_blobs(
     ]
 
     response.headers["X-Has-More"] = "true" if has_more else "false"
+    # Next cursor: timestamp of last blob in this page
+    if result:
+        response.headers["X-Next-Cursor"] = str(result[-1].timestamp)
     return result

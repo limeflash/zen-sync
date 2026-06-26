@@ -29,8 +29,7 @@ EXTENSION_ID = "zensync@limeflash.dev"
 SCRIPT_DIR = Path(__file__).parent.resolve()
 HOST_SCRIPT = SCRIPT_DIR / "zensync_host.py"
 VENV_DIR = SCRIPT_DIR / "venv"
-
-DEPS = ["argon2-cffi", "pynacl", "lz4", "keyring"]
+REQUIREMENTS = SCRIPT_DIR / "requirements.txt"
 
 
 def venv_python() -> Path:
@@ -116,8 +115,8 @@ def install() -> None:
     print(f"\n[2/5] Upgrading pip")
     run([str(venv_py), "-m", "pip", "install", "--upgrade", "pip", "-q"])
 
-    print(f"\n[3/5] Installing dependencies: {', '.join(DEPS)}")
-    run([str(venv_py), "-m", "pip", "install", *DEPS, "-q"])
+    print(f"\n[3/5] Installing dependencies from requirements.txt")
+    run([str(venv_py), "-m", "pip", "install", "-r", str(REQUIREMENTS), "-q"])
 
     print(f"\n[4/5] Writing launcher + manifest")
     host_path = build_launcher(venv_py)
