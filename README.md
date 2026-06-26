@@ -236,10 +236,13 @@ zen-sync/
 
 This project is built on top of and deeply inspired by **[Zen Browser](https://zen-browser.app)** — a calmer, more productive Firefox-based browser. Zen Sync wouldn't exist without Zen's excellent workspaces feature and their open-source approach. If you enjoy Zen Sync, please also check out Zen Browser and consider supporting their work.
 
+Zen Browser is built on **[Mozilla Firefox](https://www.mozilla.org/firefox/)** — one of the most important open-source projects in the world. Without Firefox, its WebExtension APIs, session store, and the entire Gecko engine, neither Zen Browser nor Zen Sync would exist. We stand on the shoulders of giants.
+
+- **Mozilla Firefox**: [mozilla.org/firefox](https://www.mozilla.org/firefox/) · [GitHub (mozilla-central)](https://github.com/mozilla/gecko-dev) · [Donate to Mozilla](https://give.mozilla.org)
 - **Zen Browser**: [zen-browser.app](https://zen-browser.app) · [GitHub](https://github.com/zen-browser/desktop) · [Patreon](https://patreon.com/zen_browser) · [Ko-fi](https://ko-fi.com/zen_browser)
 - **QR Code Generator**: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) by Kazuhiko Arase (MIT)
 
-Zen Sync is an independent project and is not affiliated with or endorsed by the Zen Browser team.
+Zen Sync is an independent project and is not affiliated with or endorsed by the Zen Browser team or Mozilla.
 
 ## Contributing
 
