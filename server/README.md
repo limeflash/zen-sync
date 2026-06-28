@@ -2,8 +2,8 @@
 
 The self-hostable **FastAPI** relay behind Zen Sync. It is **zero-knowledge**: it
 stores only encrypted blobs + minimal account/device metadata and never sees your
-tabs, workspaces, keys, or passphrase. This is the code deployed at
-`zensync.simg.pro` (Caddy → uvicorn → FastAPI + SQLite).
+tabs, workspaces, keys, or passphrase. Deploy it behind a TLS proxy
+(Caddy → uvicorn → FastAPI + SQLite).
 
 ## Files
 | File | Purpose |

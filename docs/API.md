@@ -1,6 +1,6 @@
 # Zen Sync Relay — API
 
-Base URL: the user-configured **Relay URL** (e.g. `https://zensync.simg.pro`).
+Base URL: the user-configured **Relay URL** (e.g. `https://your-relay.example.com`).
 A TLS proxy (Caddy) sits in front of the FastAPI/uvicorn app; it answers `GET /`
 (`zensync relay`) and `GET /health`, while everything under `/api/*` is the app.
 

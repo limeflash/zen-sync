@@ -4,7 +4,7 @@ Zen Sync is **end-to-end encrypted**. The relay is a dumb, zero-knowledge blob
 store; everything sensitive is encrypted and decrypted on the client.
 
 ```
- Device A                          Relay (zensync.simg.pro)                Device B
+ Device A                          Relay (self-hosted)                     Device B
  ┌───────────────┐                 ┌──────────────────────┐               ┌───────────────┐
  │ passphrase    │                 │  Caddy (TLS/HTTP3)    │               │ passphrase    │
  │   │ PBKDF2    │                 │      │               │               │   │ PBKDF2    │
