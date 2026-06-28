@@ -3,9 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Zen Sync preferences pane controller (gZenSyncSettings).
-// Loaded into about:preferences by zenSync.inc.xhtml and registered via
-// register_module("paneZenSync", gZenSyncSettings) in preferences.js.
-// Talks to the relay through the global ZenSyncService (ZenSyncService.sys.mjs).
+// Loaded into about:preferences by zenLooksAndFeel.inc.xhtml's <script> and
+// registered via register_module("paneZenSync", gZenSyncSettings) in
+// preferences.js. Talks to the relay through ZenSyncService.
+
+const { ZenSyncService } = ChromeUtils.importESModule(
+  "chrome://browser/content/zen-components/ZenSyncService.sys.mjs"
+);
 
 var gZenSyncSettings = {
   isJoinMode: false,
