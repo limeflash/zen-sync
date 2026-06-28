@@ -1,52 +1,39 @@
 # Contributing to Zen Sync
 
-Thank you for your interest in contributing! Zen Sync is a community project and all contributions are welcome.
+Thanks for your interest! Zen Sync has two parts — a browser-side **client**
+module and a self-hostable **server** relay — that share one API contract.
+
+## Repo layout
+- `client/` — the browser module (consumed by
+  [zen-browser-plus](https://github.com/limeflash/zen-browser-plus) as a git
+  submodule at `src/zen/sync/`). See [`client/README.md`](client/README.md).
+- `server/` — the FastAPI relay. See [`server/README.md`](server/README.md).
+- `docs/` — [API.md](docs/API.md) and [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Getting started
-
 ```bash
 git clone https://github.com/limeflash/zen-sync.git
-cd zen-sync/native-host && python install.py
-# Load extension in Zen Browser via about:debugging#/runtime/this-firefox
+cd zen-sync/server && pip install -r requirements.txt
+ZENSYNC_ALLOW_OPEN_REGISTRATION=true uvicorn main:app --reload --port 8000
 ```
+For the client, work inside the browser repo's submodule and rebuild (see
+`client/README.md`); the browser console (`Ctrl+Shift+J`) shows `ZenSync:` logs.
 
-## Development workflow
-
-1. Make your changes
-2. Reload the extension in Zen Browser (`about:debugging` → Reload)
-3. Test your changes
-4. Open the Browser Console (`Ctrl+Shift+J`) to see `[zensync]` logs
-5. Commit with a clear message
-6. Open a PR
+## Before you push
+- **Server:** `python -m py_compile server/main.py` and (optional) `bandit -r server -ll`.
+- **Client:** `node --check client/modules/ZenSyncService.sys.mjs client/preferences/zenSyncSettings.js`.
+- Keep the **API contract** ([docs/API.md](docs/API.md)) and client in sync — a
+  change on one side usually needs the other.
 
 ## Code style
-
-- **Python**: standard Python style, type hints preferred
-- **JavaScript**: no semicolons, 2-space indent, async/await (not callbacks)
-- **CSS**: CSS custom properties (HSL color tokens), no preprocessor
-
-## What to work on
-
-Check [Issues](https://github.com/limeflash/zen-sync/issues) for open tasks. High-priority areas:
-
-- **WRITE path**: applying remote state to the local Zen profile
-- **macOS testing**: verify profile discovery + native messaging on macOS
-- **Conflict resolution**: merge instead of last-writer-wins
-- **XPI packaging**: signed XPI for permanent (non-temporary) install
-- **Auto-discovery**: zero-config relay setup via QR
-
-## Reporting bugs
-
-Use the bug report template when opening an issue. Include:
-- Zen Browser version
-- OS (macOS / Windows / Linux)
-- Steps to reproduce
-- Browser Console output (`Ctrl+Shift+J`)
+- **Python:** standard style, type hints preferred.
+- **JavaScript (client):** matches Firefox front-end style (2-space indent,
+  semicolons, `async/await`); MPL-2.0 header on new files.
 
 ## Security
-
-Found a security issue? Please don't open a public issue. Email: [security@limeflash.dev] or open a private security advisory on GitHub.
+Please don't open public issues for vulnerabilities — use a private GitHub
+security advisory.
 
 ## License
-
-By contributing, you agree that your contributions are licensed under the MIT license.
+Contributions to `server/`/docs are under [MIT](LICENSE); contributions to
+`client/` are under [MPL-2.0](https://www.mozilla.org/MPL/2.0/) (Firefox-derived).

@@ -1,7 +1,0 @@
-{
-  "name": "zensync_host",
-  "description": "Zen Sync native messaging host",
-  "type": "stdio",
-  "path": "PLACEHOLDER_PATH",
-  "allowed_extensions": ["zensync@limeflash.dev"]
-}

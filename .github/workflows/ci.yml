@@ -7,7 +7,7 @@ on:
     branches: [master]
 
 jobs:
-  python:
+  server:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,30 +15,24 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile check
-        run: python -m py_compile server/main.py native-host/zensync_host.py native-host/install.py
-      - name: Install all dependencies
-        run: |
-          pip install -r server/requirements.txt
-          pip install -r native-host/requirements.txt
+        run: python -m py_compile server/main.py
+      - name: Install dependencies
+        run: pip install -r server/requirements.txt
       - name: Install audit tools
         run: pip install bandit pip-audit
-      - name: Bandit (medium+ severity only, excludes venv)
-        run: bandit -r server native-host -q -ll
-      - name: pip-audit (server + native deps)
-        run: pip-audit
+      - name: Bandit (medium+ severity)
+        run: bandit -r server -q -ll
+      - name: pip-audit
+        run: pip-audit -r server/requirements.txt
 
-  extension:
+  client:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Syntax check
+      - name: Syntax check (client module)
         run: |
-          node --check extension/background.js
-          node --check extension/popup/popup.js
-      - name: web-ext lint
-        run: npx --yes web-ext lint --source-dir extension
-      - name: retire
-        run: npx --yes retire --path extension
+          node --check client/modules/ZenSyncService.sys.mjs
+          node --check client/preferences/zenSyncSettings.js

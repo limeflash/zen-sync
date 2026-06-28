@@ -37,6 +37,9 @@ MAX_BYTES_PER_ACCOUNT = 512 * 1024 * 1024  # 512 MB total per account
 MAX_DEVICES_PER_ACCOUNT = 20
 MAX_PULL_RESULTS = 500
 NONCE_SIZE = 24  # XChaCha20-Poly1305 IETF nonce
+# Accepted AEAD nonce lengths (bytes): 12 = AES-256-GCM (native browser client),
+# 24 = XChaCha20-Poly1305. The relay never decrypts, so it only length-checks.
+ALLOWED_NONCE_SIZES = {12, 24}
 SALT_MIN_SIZE = 16
 SALT_MAX_SIZE = 64
 RATE_LIMIT_WINDOW = 60  # seconds
@@ -192,15 +195,22 @@ class PublishBlobRequest(BaseModel):
     @field_validator("nonce")
     @classmethod
     def validate_nonce(cls, v: str) -> str:
-        # encoded nonce should be ~32 chars for 24 bytes
         if len(v) > 100:
             raise ValueError("nonce too large")
         try:
             decoded = base64.b64decode(v, validate=True)
         except Exception:
             raise ValueError("nonce must be valid base64")
-        if len(decoded) != NONCE_SIZE:
-            raise ValueError(f"nonce must be exactly {NONCE_SIZE} bytes")
+        # The relay is zero-knowledge and never decrypts, so it only sanity-checks
+        # the nonce length. Accept the standard AEAD nonce sizes: 12 bytes for
+        # AES-256-GCM (what the native client uses) and 24 bytes for
+        # XChaCha20-Poly1305. The previous code hard-required exactly 24 bytes,
+        # which rejected every AES-GCM blob the browser pushed (HTTP 422).
+        if len(decoded) not in ALLOWED_NONCE_SIZES:
+            raise ValueError(
+                f"nonce must be one of {sorted(ALLOWED_NONCE_SIZES)} bytes "
+                f"(12 = AES-GCM, 24 = XChaCha20)"
+            )
         return v
 
     @field_validator("ciphertext")
@@ -419,6 +429,26 @@ def delete_device(
         # Delete device
         conn.execute("DELETE FROM devices WHERE id = ?", (device_id,))
     return {"ok": True, "message": "device revoked"}
+
+
+@app.delete("/api/account")
+def delete_account(
+    x_account_id: str = Header(..., alias="X-Account-Id"),
+    x_auth_token: Optional[str] = Header(None),
+):
+    """Permanently delete the account and everything under it.
+
+    The browser client's "Delete Account" action calls this. Devices and blobs
+    are removed via ON DELETE CASCADE (foreign_keys=ON)."""
+    account_id = require_account(x_account_id, x_auth_token)
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "account not found")
+        conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+    return {"ok": True, "message": "account deleted"}
 
 
 @app.post("/api/blobs")
