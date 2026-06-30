@@ -189,6 +189,12 @@
         <html:h3 style="font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--in-content-text-color, #fbfbfe);">Linked Devices:</html:h3>
         <html:div id="zenSyncDeviceList" style="margin-bottom: 20px; max-height: 200px; overflow-y: auto;"/>
 
+        <html:h3 style="font-size: 13px; font-weight: 600; margin: 4px 0 6px; color: var(--in-content-text-color, #fbfbfe);">Sync code</html:h3>
+        <description class="description-deemphasized" style="font-size: 12px; margin: 0 0 10px; line-height: 1.4;">Scan with the Zen Sync app on another device to pair it (carries Server + Account ID + Key Salt). Then enter your passphrase there — the passphrase is never in the code, so the data stays unreadable.</description>
+        <html:div style="margin-bottom: 20px;">
+              <html:img id="zenSyncQrImage" width="190" height="190" alt="Zen Sync pairing QR code" style="background: #ffffff; border-radius: 10px; padding: 10px; display: none;"/>
+        </html:div>
+
         <hbox align="center" style="gap: 10px;">
               <button id="zenSyncBtnSyncNow" is="highlightable-button" class="accent-button" label="Sync Now"/>
               <button id="zenSyncBtnDisconnect" is="highlightable-button" class="accessory-button" label="Disconnect Account"/>

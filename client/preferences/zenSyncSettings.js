@@ -11,6 +11,10 @@ const { ZenSyncService } = ChromeUtils.importESModule(
   "chrome://browser/content/zen-components/ZenSyncService.sys.mjs"
 );
 
+const { QRCodeGenerator } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/qrcode/QRCodeGenerator.sys.mjs"
+);
+
 var gZenSyncSettings = {
   isJoinMode: false,
 
@@ -41,6 +45,7 @@ var gZenSyncSettings = {
     this.lastTimeLabel = document.getElementById("zenSyncLastTime");
     this.statusText = document.getElementById("zenSyncStatusText");
     this.statusDot = document.getElementById("zenSyncStatusDot");
+    this.qrImage = document.getElementById("zenSyncQrImage");
 
     this.btnAction = document.getElementById("zenSyncBtnAction");
     this.btnSwitchMode = document.getElementById("zenSyncBtnSwitchMode");
@@ -95,6 +100,29 @@ var gZenSyncSettings = {
     }
   },
 
+  // Render the "Sync code" QR: zensync://join?server=<relay>&account=<id>&salt=<salt>.
+  // The passphrase is deliberately NOT included — it stays a manually-entered
+  // secret, so the QR alone can't decrypt anything. A second device (e.g. the
+  // Zen Sync mobile app) scans it to prefill its Join form.
+  async renderSyncQr(config) {
+    if (!this.qrImage) return;
+    try {
+      if (!config.relayUrl || !config.accountId || !config.salt) {
+        this.qrImage.style.display = "none";
+        return;
+      }
+      const uri =
+        "zensync://join?server=" + encodeURIComponent(config.relayUrl) +
+        "&account=" + encodeURIComponent(config.accountId) +
+        "&salt=" + encodeURIComponent(config.salt);
+      this.qrImage.src = await QRCodeGenerator.generateQRCode(uri);
+      this.qrImage.style.display = "";
+    } catch (e) {
+      console.error("ZenSync: failed to render sync QR:", e);
+      this.qrImage.style.display = "none";
+    }
+  },
+
   async updateUI() {
     try {
       const isConfigured = await ZenSyncService.isConfigured();
@@ -124,7 +152,10 @@ var gZenSyncSettings = {
         this.activeDeviceInput.value = config.deviceName || "";
         this.accountIdInput.value = config.accountId || "";
         this.saltInput.value = config.salt || "";
-        
+
+        // Render the pairing QR ("Sync code") — async, must not block updateUI.
+        this.renderSyncQr(config);
+
         const status = await ZenSyncService.getStatus();
         this.statusText.textContent = status.connected ? "Connected" : "Disconnected (Error)";
         this.statusDot.style.background = status.connected ? "#10b981" : "#ef4444";
